@@ -101,7 +101,7 @@ func (gde *GDExtensionBuilder) ExtractNanopbGenerator(dst string) error {
 	return nil
 }
 
-func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform string, generateOnly bool) error {
+func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform string, generateOnly bool, stdout, stderr io.Writer) error {
 	// Determine build directory: UserCacheDir/gdbuf
 	userCacheDir, err := os.UserCacheDir()
 	var buildDir string
@@ -188,7 +188,7 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 			buildSubdir = "web"
 			if emsdkHome == "" {
 				gde.logger.Info("EMSDK not set, checking for managed Emscripten SDK")
-				managedEmsdkPath, err := gde.ensureEmscripten(userCacheDir)
+				managedEmsdkPath, err := gde.ensureEmscripten(userCacheDir, stdout, stderr)
 				if err != nil {
 					return fmt.Errorf("failed to setup Emscripten SDK: %w", err)
 				}
@@ -231,8 +231,8 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 		buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("PATH=%s%c%s", emscriptenBin, os.PathListSeparator, currentPath))
 	}
 	buildCmd.Dir = buildDir
-	buildCmd.Stdout = os.Stdout
-	buildCmd.Stderr = os.Stderr
+	buildCmd.Stdout = stdout
+	buildCmd.Stderr = stderr
 	err = buildCmd.Run()
 	if err != nil {
 		return fmt.Errorf("build error: %w", err)
@@ -295,7 +295,7 @@ func (gde *GDExtensionBuilder) ensureAndroidNDK(cacheDir string) (string, error)
 	return ndkPath, nil
 }
 
-func (gde *GDExtensionBuilder) ensureEmscripten(cacheDir string) (string, error) {
+func (gde *GDExtensionBuilder) ensureEmscripten(cacheDir string, stdout, stderr io.Writer) (string, error) {
 	emsdkDir := filepath.Join(cacheDir, "emsdk")
 
 	if _, err := os.Stat(emsdkDir); err != nil {
@@ -332,8 +332,8 @@ func (gde *GDExtensionBuilder) ensureEmscripten(cacheDir string) (string, error)
 		gde.logger.Info("installing emsdk", "version", emscriptenVersion)
 		cmd := exec.Command(emsdkBin, "install", emscriptenVersion)
 		cmd.Dir = emsdkDir
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
 		if err := cmd.Run(); err != nil {
 			return "", fmt.Errorf("failed to install emsdk version %s: %w", emscriptenVersion, err)
 		}
@@ -342,8 +342,8 @@ func (gde *GDExtensionBuilder) ensureEmscripten(cacheDir string) (string, error)
 	gde.logger.Info("activating emsdk", "version", emscriptenVersion)
 	cmd := exec.Command(emsdkBin, "activate", emscriptenVersion)
 	cmd.Dir = emsdkDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("failed to activate emsdk version %s: %w", emscriptenVersion, err)
 	}

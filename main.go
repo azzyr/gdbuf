@@ -13,6 +13,7 @@ import (
 	"github.com/LJ-Software/gdbuf/internal/codegen"
 	"github.com/LJ-Software/gdbuf/internal/gdextension"
 	"github.com/LJ-Software/gdbuf/internal/protoc"
+	"github.com/LJ-Software/gdbuf/internal/tui"
 )
 
 var (
@@ -46,6 +47,7 @@ func main() {
 	extensionArtifactOutputDirPtr := flag.String("out", "./out", "output directory location of the generated gdextension")
 	generateOnlyPtr := flag.Bool("generate-only", false, "only generate c++ code, do not compile gdextension")
 	platformPtr := flag.String("platform", "", "target platform (linux, windows, web, android)")
+	stdoutPtr := flag.Bool("stdout", false, "print build output to stdout instead of using TUI")
 	versionPtr := flag.Bool("version", false, "print version information and exit")
 
 	flag.Parse()
@@ -143,18 +145,34 @@ func main() {
 		platforms = strings.Split(*platformPtr, ",")
 	}
 
+	var validPlatforms []string
 	for _, platform := range platforms {
 		// Trim space just in case user did "linux, windows"
 		platform = strings.TrimSpace(platform)
-		if platform == "" && len(platforms) > 1 {
+		if platform == "" {
 			continue
 		}
-		logger.Info("building gdextension", "platform", platform)
-		err = gdExtensionBuilder.Build(*cppOutputDirPtr, *extensionArtifactOutputDirPtr, platform, *generateOnlyPtr)
-		if err != nil {
-			logger.Error("problem building gdextension", "platform", platform, "err", err)
-			os.Exit(1)
+		validPlatforms = append(validPlatforms, platform)
+	}
+
+	if len(validPlatforms) > 0 {
+		if *stdoutPtr {
+			for _, platform := range validPlatforms {
+				logger.Info("building gdextension", "platform", platform)
+				err = gdExtensionBuilder.Build(*cppOutputDirPtr, *extensionArtifactOutputDirPtr, platform, *generateOnlyPtr, os.Stdout, os.Stderr)
+				if err != nil {
+					logger.Error("problem building gdextension", "platform", platform, "err", err)
+					os.Exit(1)
+				}
+			}
+		} else {
+			if err := tui.Run(gdExtensionBuilder, *cppOutputDirPtr, *extensionArtifactOutputDirPtr, validPlatforms, *generateOnlyPtr); err != nil {
+				logger.Error("problem building gdextension", "err", err)
+				os.Exit(1)
+			}
 		}
+	} else {
+		logger.Warn("no valid platforms specified, nothing to build")
 	}
 }
 
