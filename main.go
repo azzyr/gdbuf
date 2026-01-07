@@ -56,7 +56,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	logger.Info("starting gdbuf")
+	logger.Info("starting gdbuf", "version", Version)
 
 	if len(*protoInputDirPtr) == 0 {
 		logger.Error("required argument --proto not given")
