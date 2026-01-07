@@ -15,6 +15,13 @@ import (
 	"github.com/LJ-Software/gdbuf/internal/protoc"
 )
 
+var (
+	// Version is the semantic version of the binary, injected at build time.
+	Version = "dev"
+	// Commit is the git commit hash of the binary, injected at build time.
+	Commit = "none"
+)
+
 type arrayFlags []string
 
 func (i *arrayFlags) String() string {
@@ -30,7 +37,6 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	}))
-	logger.Info("starting gdbuf")
 
 	var includeDirs arrayFlags
 	flag.Var(&includeDirs, "include", "include directories for proto files")
@@ -40,8 +46,17 @@ func main() {
 	extensionArtifactOutputDirPtr := flag.String("out", "./out", "output directory location of the generated gdextension")
 	generateOnlyPtr := flag.Bool("generate-only", false, "only generate c++ code, do not compile gdextension")
 	platformPtr := flag.String("platform", "", "target platform (linux, windows, web, android)")
+	versionPtr := flag.Bool("version", false, "print version information and exit")
 
 	flag.Parse()
+
+	if *versionPtr {
+		fmt.Printf("gdbuf version: %s\n", Version)
+		fmt.Printf("git commit: %s\n", Commit)
+		os.Exit(0)
+	}
+
+	logger.Info("starting gdbuf")
 
 	if len(*protoInputDirPtr) == 0 {
 		logger.Error("required argument --proto not given")
