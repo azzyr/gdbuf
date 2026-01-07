@@ -90,6 +90,13 @@ message ReservedMessage {
   reserved "foo", "bar";
 }
 
+message KeywordMessage {
+  string friend = 1;
+  int32 class = 2;
+  bool struct = 3;
+  float switch = 4;
+}
+
 message EverythingMessage {
   BasicTestMessage basic_message = 1;
   SpecialFieldTypesMessage special_message = 2;
@@ -102,4 +109,5 @@ message EverythingMessage {
   RepeatedComplexMessage repeated_complex = 9;
   RecursiveMessage recursive = 10;
   nested.deeply.DeeplyNestedMessage deeply_nested = 11;
+  KeywordMessage keyword_message = 12;
 }

@@ -366,7 +366,7 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 				oneofDecls := msg.GetOneofDecl()
 				for i, oneof := range oneofDecls {
 					protoMessage.Oneofs = append(protoMessage.Oneofs, protoOneof{
-						Name: oneof.GetName(),
+						Name: sanitizeCpp(oneof.GetName()),
 					})
 					// Note: We will populate Fields later as we iterate fields
 					// Actually, we might want to verify if it's synthetic.
@@ -378,8 +378,9 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 
 				for fieldIndex, field := range msg.GetField() {
 					var protoMessageField protoMessageField
-					protoMessageField.FieldName = field.GetName()
+					protoMessageField.FieldName = sanitizeCpp(field.GetName())
 					protoMessageField.ProtoTypeName = field.GetTypeName()
+
 					protoMessageField.Number = field.GetNumber()
 					fieldPath := append(slices.Clone(currentPath), 2, int32(fieldIndex))
 					protoMessageField.Description = getComments(file.GetSourceCodeInfo(), fieldPath)
@@ -562,4 +563,34 @@ func (cg *CodeGenerator) extractGlobalEnums(fileDescriptorSet []*descriptorpb.Fi
 		}
 	}
 	return globalEnums
+}
+
+func sanitizeCpp(name string) string {
+	keywords := map[string]bool{
+		"alignas": true, "alignof": true, "and": true, "and_eq": true, "asm": true,
+		"atomic_cancel": true, "atomic_commit": true, "atomic_noexcept": true, "auto": true,
+		"bitand": true, "bitor": true, "bool": true, "break": true, "case": true,
+		"catch": true, "char": true, "char8_t": true, "char16_t": true, "char32_t": true,
+		"class": true, "compl": true, "concept": true, "const": true, "consteval": true,
+		"constexpr": true, "constinit": true, "const_cast": true, "continue": true,
+		"co_await": true, "co_return": true, "co_yield": true, "decltype": true,
+		"default": true, "delete": true, "do": true, "double": true, "dynamic_cast": true,
+		"else": true, "enum": true, "explicit": true, "export": true, "extern": true,
+		"false": true, "float": true, "for": true, "friend": true, "goto": true,
+		"if": true, "inline": true, "int": true, "long": true, "mutable": true,
+		"namespace": true, "new": true, "noexcept": true, "not": true, "not_eq": true,
+		"nullptr": true, "operator": true, "or": true, "or_eq": true, "private": true,
+		"protected": true, "public": true, "register": true, "reinterpret_cast": true,
+		"requires": true, "return": true, "short": true, "signed": true, "sizeof": true,
+		"static": true, "static_assert": true, "static_cast": true, "struct": true,
+		"switch": true, "synchronized": true, "template": true, "this": true,
+		"thread_local": true, "throw": true, "true": true, "try": true, "typedef": true,
+		"typeid": true, "typename": true, "union": true, "unsigned": true, "using": true,
+		"virtual": true, "void": true, "volatile": true, "wchar_t": true, "while": true,
+		"xor": true, "xor_eq": true,
+	}
+	if keywords[name] {
+		return name + "_"
+	}
+	return name
 }

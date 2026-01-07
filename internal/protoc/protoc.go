@@ -106,9 +106,12 @@ func (c *ProtoCompiler) CompileNanopb(protoFilesDirPath string, includeDirs []st
 	}
 
 	// Use FT_POINTER for strings/arrays to use malloc/free instead of static buffers/callbacks
+	customStylePath := filepath.Join(generatorDir, "gdbuf_naming_style.py")
+	customStyleArg := strings.TrimSuffix(customStylePath, ".py") + ".GdbufNamingStyle"
 	args := []string{
 		fmt.Sprintf("--plugin=protoc-gen-nanopb=%s", pluginPath),
 		"--nanopb_opt=-s type:FT_POINTER",
+		fmt.Sprintf("--nanopb_opt=--custom-style=%s", customStyleArg),
 		fmt.Sprintf("--nanopb_out=%s", tempProtocBuildDir),
 	}
 

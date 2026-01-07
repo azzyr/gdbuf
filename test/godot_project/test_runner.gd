@@ -13,6 +13,7 @@ func _init():
 	test_nested_message()
 	test_enums()
 	test_to_string()
+	test_keyword_message()
 
 	if tests_failed == 0:
 		print("ALL TESTS PASSED")
@@ -180,6 +181,19 @@ func test_nested_message():
 	msg.inner_msg = inner
 	
 	assert_eq(msg.inner_msg.inner_string, "Inner", "Nested message field")
+
+func test_keyword_message():
+	print("--- test_keyword_message ---")
+	var msg = KeywordMessage.new()
+	msg.friend_ = "best friend"
+	msg.class_ = 123
+	msg.struct_ = true
+	msg.switch_ = 1.5
+	
+	assert_eq(msg.friend_, "best friend", "Keyword friend_")
+	assert_eq(msg.class_, 123, "Keyword class_")
+	assert_eq(msg.struct_, true, "Keyword struct_")
+	assert_true(abs(msg.switch_ - 1.5) < 0.0001, "Keyword switch_")
 
 func test_enums():
 	print("--- test_enums ---")

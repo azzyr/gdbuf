@@ -18,6 +18,51 @@ import (
 //go:embed all:buildenv/*
 var buildEnvFS embed.FS
 
+const gdbufNamingStyleScript = `class GdbufNamingStyle:
+    def sanitize(self, name):
+        if name in [
+            "alignas", "alignof", "and", "and_eq", "asm", "atomic_cancel", "atomic_commit", "atomic_noexcept", "auto",
+            "bitand", "bitor", "bool", "break", "case", "catch", "char", "char8_t", "char16_t", "char32_t", "class",
+            "compl", "concept", "const", "consteval", "constexpr", "constinit", "const_cast", "continue", "co_await",
+            "co_return", "co_yield", "decltype", "default", "delete", "do", "double", "dynamic_cast", "else", "enum",
+            "explicit", "export", "extern", "false", "float", "for", "friend", "goto", "if", "inline", "int", "long",
+            "mutable", "namespace", "new", "noexcept", "not", "not_eq", "nullptr", "operator", "or", "or_eq", "private",
+            "protected", "public", "register", "reinterpret_cast", "requires", "return", "short", "signed", "sizeof",
+            "static", "static_assert", "static_cast", "struct", "switch", "synchronized", "template", "this",
+            "thread_local", "throw", "true", "try", "typedef", "typeid", "typename", "union", "unsigned", "using",
+            "virtual", "void", "volatile", "wchar_t", "while", "xor", "xor_eq"
+        ]:
+            return name + "_"
+        return name
+
+    def enum_name(self, name):
+        return self.sanitize("_%s" % (name))
+
+    def struct_name(self, name):
+        return self.sanitize("_%s" % (name))
+
+    def union_name(self, name):
+        return self.sanitize("_%s" % (name))
+
+    def type_name(self, name):
+        return self.sanitize("%s" % (name))
+
+    def define_name(self, name):
+        return self.sanitize("%s" % (name))
+
+    def var_name(self, name):
+        return self.sanitize("%s" % (name))
+
+    def enum_entry(self, name):
+        return self.sanitize("%s" % (name))
+
+    def func_name(self, name):
+        return self.sanitize("%s" % (name))
+
+    def bytes_type(self, struct_name, name):
+        return "%s_%s_t" % (struct_name, name)
+`
+
 const (
 	androidNDKVersion = "r28b"
 	emscriptenVersion = "3.1.64"
@@ -44,7 +89,16 @@ func (gde *GDExtensionBuilder) ExtractNanopbGenerator(dst string) error {
 	if err != nil {
 		return err
 	}
-	return copyFS(genFS, dst)
+	if err := copyFS(genFS, dst); err != nil {
+		return err
+	}
+
+	// Write custom naming style script
+	stylePath := filepath.Join(dst, "gdbuf_naming_style.py")
+	if err := os.WriteFile(stylePath, []byte(gdbufNamingStyleScript), 0644); err != nil {
+		return fmt.Errorf("could not write custom style script: %w", err)
+	}
+	return nil
 }
 
 func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform string, generateOnly bool) error {
