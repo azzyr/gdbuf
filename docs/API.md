@@ -50,6 +50,7 @@ Message fields are exposed as standard Godot properties. You can read and write 
 | `repeated int32 scores = 4;` | `msg.scores` | `Array[int]` | |
 | `map<string, int32> items = 5;` | `msg.items` | `Dictionary` | |
 | `MyNestedMsg nested = 6;` | `msg.nested` | `MyNestedMsg` | Inherits `Resource` |
+| `string class = 7;` | `msg.class_` | `String` | Keyword sanitized |
 
 ### Nested Messages
 Nested message fields use `Ref<Resource>` semantics.

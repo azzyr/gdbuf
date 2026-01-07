@@ -78,6 +78,13 @@ msg.number = 42
 print(msg.text) # Prints "" (default string)
 ```
 
+### 8. Reserved Keyword Support
+Fields named after C++ reserved keywords (e.g., `class`, `struct`, `friend`, `signal`) are automatically sanitized to avoid compilation errors.
+- **Sanitization:** An underscore `_` is appended to the field name.
+- **Example:**
+  - Proto: `string class = 1;`
+  - GDScript: `msg.class_`
+
 ## Example
 
 **Input (`player.proto`):**
