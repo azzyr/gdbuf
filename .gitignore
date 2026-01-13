@@ -32,8 +32,8 @@ go.work.sum
 # .vscode/
 
 test/*.desc.binpb
-test/out/
-test/genout/
+test/out*/
+test/genout*/
 bin/
 
 # Generated test artifacts
