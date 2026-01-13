@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/LJ-Software/gdbuf/internal/gdextension"
 	"github.com/charmbracelet/bubbles/progress"
@@ -15,13 +17,17 @@ import (
 )
 
 type progressMsg float64
-type buildResultMsg error
+type buildResultMsg struct{ err error }
 type logLineMsg string
+type buildStartedMsg string
 
 var (
 	docStyle   = lipgloss.NewStyle().Margin(1, 2)
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7D56F4"))
 	logStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
+	progressRe = regexp.MustCompile(`\[\s*(?:(\d+)%|(\d+)\s*/\s*(\d+))\]`)
+	phaseRe    = regexp.MustCompile(`cmake -B build/[^/]+/([^/ ]+)`)
+	ansiRe     = regexp.MustCompile("[\u001B\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))")
 )
 
 type Model struct {
@@ -48,7 +54,6 @@ type Model struct {
 
 	progressChan chan float64
 	logChan      chan string
-	resultChan   chan error
 }
 
 func Run(builder *gdextension.GDExtensionBuilder, cppSourceDir, outputDir string, platforms []string, generateOnly bool) error {
@@ -69,9 +74,8 @@ func Run(builder *gdextension.GDExtensionBuilder, cppSourceDir, outputDir string
 		spinner:         spinner.New(),
 		statusMessage:   "Initializing...",
 		logFile:         logFile,
-		progressChan:    make(chan float64, 100),
-		logChan:         make(chan string, 100),
-		resultChan:      make(chan error),
+		progressChan:    make(chan float64, 1000), // Increased buffer
+		logChan:         make(chan string, 1000),
 	}
 	m.spinner.Spinner = spinner.Dot
 	m.spinner.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -88,7 +92,6 @@ func (m Model) Init() tea.Cmd {
 		m.startNextBuild(),
 		m.waitForProgress(),
 		m.waitForLogLine(),
-		m.waitForBuildResult(),
 	)
 }
 
@@ -119,10 +122,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastLogLine = string(msg)
 		return m, m.waitForLogLine()
 
+	case buildStartedMsg:
+		m.statusMessage = fmt.Sprintf("Building %s...", string(msg))
+		return m, m.performBuild(string(msg))
+
 	case buildResultMsg:
-		if msg != nil {
-			m.err = msg
-			m.statusMessage = fmt.Sprintf("Build failed: %v", msg)
+		if msg.err != nil {
+			m.err = msg.err
+			m.statusMessage = fmt.Sprintf("Build failed: %v", msg.err)
 			return m, tea.Quit
 		}
 
@@ -130,18 +137,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Update overall progress
 		progressPct := float64(m.currentPlatformIdx) / float64(len(m.platforms))
-		cmd := m.overallProgress.SetPercent(progressPct)
+		progressCmd := m.overallProgress.SetPercent(progressPct)
 
 		if m.currentPlatformIdx >= len(m.platforms) {
 			m.done = true
 			m.statusMessage = "All builds completed successfully!"
 			m.currentProgress.SetPercent(1.0)
-			return m, tea.Sequence(cmd, tea.Quit)
+			return m, tea.Sequence(progressCmd, tea.Quit)
 		}
 
 		m.currentProgress.SetPercent(0)
 		m.lastLogLine = "" // Clear log line for next build
-		return m, tea.Batch(cmd, m.startNextBuild(), m.waitForBuildResult())
+		return m, tea.Batch(progressCmd, m.startNextBuild())
+
+	default:
+		// Pass messages to progress bars to handle animation frames
+		var cmd tea.Cmd
+		var cmds []tea.Cmd
+		var progressModel tea.Model
+
+		progressModel, cmd = m.overallProgress.Update(msg)
+		m.overallProgress = progressModel.(progress.Model)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+
+		progressModel, cmd = m.currentProgress.Update(msg)
+		m.currentProgress = progressModel.(progress.Model)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+
+		return m, tea.Batch(cmds...)
 	}
 
 	return m, nil
@@ -197,27 +224,47 @@ func (m Model) startNextBuild() tea.Cmd {
 	platform := m.platforms[m.currentPlatformIdx]
 
 	return func() tea.Msg {
+		return buildStartedMsg(platform)
+	}
+}
+
+func (m Model) performBuild(platform string) tea.Cmd {
+	return func() tea.Msg {
+		// Use a WaitGroup to ensure we wait for the goroutine to finish
+		var wg sync.WaitGroup
+		wg.Add(1)
+
+		var err error
 		go func() {
+			defer wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("panic in builder: %v", r)
+				}
+			}()
+
 			pw := &progressWriter{
-				logFile: m.logFile,
+				logFile:      m.logFile,
+				currentPhase: 0,
+				totalPhases:  2, // Typically Debug and Release
 				onProgress: func(p float64) {
-					select {
-					case m.progressChan <- p:
-					default:
-					}
+					// BLOCKING send. We need to ensure the UI gets these updates.
+					// Since we run this in a goroutine, blocking here just slows down the build output processing
+					// to match the UI render speed, which is acceptable and safe (no deadlock with main thread).
+					m.progressChan <- p
 				},
 				onLog: func(line string) {
-					select {
-					case m.logChan <- line:
-					default:
-					}
+					m.logChan <- line
 				},
 			}
 
-			err := m.builder.Build(m.cppSourceDir, m.outputDir, platform, m.generateOnly, pw, pw)
-			m.resultChan <- err
+			defer pw.Close()
+
+			err = m.builder.Build(m.cppSourceDir, m.outputDir, platform, m.generateOnly, pw, pw)
 		}()
-		return nil
+
+		wg.Wait()
+		return buildResultMsg{err: err}
 	}
 }
 
@@ -233,42 +280,138 @@ func (m Model) waitForLogLine() tea.Cmd {
 	}
 }
 
-func (m Model) waitForBuildResult() tea.Cmd {
-	return func() tea.Msg {
-		return buildResultMsg(<-m.resultChan)
-	}
+type progressWriter struct {
+	logFile      *os.File
+	onProgress   func(float64)
+	onLog        func(string)
+	buffer       []byte
+	mu           sync.Mutex
+	currentPhase int
+	totalPhases  int
 }
 
-type progressWriter struct {
-	logFile    *os.File
-	onProgress func(float64)
-	onLog      func(string)
+func (pw *progressWriter) Close() error {
+	pw.mu.Lock()
+	defer pw.mu.Unlock()
+
+	if len(pw.buffer) > 0 {
+		lineStr := string(pw.buffer)
+		lineStr = strings.TrimSpace(lineStr)
+		if lineStr != "" {
+			if pw.onLog != nil {
+				pw.onLog(lineStr)
+			}
+		}
+		pw.buffer = nil
+	}
+	return nil
 }
 
 func (pw *progressWriter) Write(p []byte) (n int, err error) {
+	pw.mu.Lock()
+	defer pw.mu.Unlock()
+
 	if pw.logFile != nil {
 		pw.logFile.Write(p)
 	}
 
-	output := string(p)
+	pw.buffer = append(pw.buffer, p...)
 
-	// Extract the last non-empty line for logging display
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) > 0 {
-		lastLine := lines[len(lines)-1]
-		if pw.onLog != nil && lastLine != "" {
-			pw.onLog(lastLine)
+	for {
+		// Handle both \n and \r as delimiters
+		idxN := bytes.IndexByte(pw.buffer, '\n')
+		idxR := bytes.IndexByte(pw.buffer, '\r')
+
+		var idx int
+		var sepLen int
+
+		if idxN != -1 && idxR != -1 {
+			if idxN < idxR {
+				idx = idxN
+				sepLen = 1
+			} else {
+				idx = idxR
+				sepLen = 1
+			}
+		} else if idxN != -1 {
+			idx = idxN
+			sepLen = 1
+		} else if idxR != -1 {
+			idx = idxR
+			sepLen = 1
+		} else {
+			break
+		}
+
+		line := pw.buffer[:idx]
+		pw.buffer = pw.buffer[idx+sepLen:]
+
+		lineStr := string(line)
+		lineStr = strings.TrimSpace(lineStr)
+
+		if lineStr != "" {
+			if pw.onLog != nil {
+				pw.onLog(lineStr)
+			}
+
+			// Strip ANSI color codes for regex matching
+			cleanLine := stripAnsi(lineStr)
+
+			// Check for phase change
+			phaseMatches := phaseRe.FindStringSubmatch(cleanLine)
+			if len(phaseMatches) > 1 {
+				target := phaseMatches[1]
+				if strings.Contains(target, "debug") {
+					pw.currentPhase = 0
+				} else if strings.Contains(target, "release") {
+					pw.currentPhase = 1
+				}
+			}
+
+			// Match [ 10%] or [1/100]
+			matches := progressRe.FindStringSubmatch(cleanLine)
+			if len(matches) > 1 {
+				var rawProgress float64
+				var valid bool
+
+				if matches[1] != "" {
+					// Percentage match
+					pct, _ := strconv.Atoi(matches[1])
+					rawProgress = float64(pct) / 100.0
+					valid = true
+				} else if matches[2] != "" && matches[3] != "" {
+					// Step match [current/total]
+					current, _ := strconv.Atoi(matches[2])
+					total, _ := strconv.Atoi(matches[3])
+					if total > 0 {
+						rawProgress = float64(current) / float64(total)
+						valid = true
+					}
+				}
+
+				if valid && pw.onProgress != nil {
+					// Scale progress based on phase
+					scaledProgress := (float64(pw.currentPhase) + rawProgress) / float64(pw.totalPhases)
+					if scaledProgress > 1.0 {
+						scaledProgress = 1.0
+					}
+					pw.onProgress(scaledProgress)
+				}
+			} else {
+				// DEBUG: Log first few chars of unmatched lines to see if we are missing something obvious
+				// But only if it looks like it might be relevant (has numbers or brackets)
+				if strings.Contains(cleanLine, "[") || strings.Contains(cleanLine, "%") {
+					if pw.onLog != nil {
+						pw.onLog(fmt.Sprintf("DEBUG: Unmatched: %s", cleanLine))
+					}
+				}
+			}
 		}
 	}
 
-	// Match [ 10%] or [10%]
-	re := regexp.MustCompile(`\[\s*(\d+)%\]`)
-	matches := re.FindStringSubmatch(output)
-	if len(matches) > 1 {
-		pct, _ := strconv.Atoi(matches[1])
-		if pw.onProgress != nil {
-			pw.onProgress(float64(pct) / 100.0)
-		}
-	}
 	return len(p), nil
+}
+
+func stripAnsi(str string) string {
+	return ansiRe.ReplaceAllString(str, "")
 }

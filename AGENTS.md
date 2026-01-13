@@ -5,7 +5,7 @@
 - **Unit Test:** `go test ./...` runs all Go unit tests.
   - Single test: `go test -run TestName ./...`
 - **Integration Test:** `make test-full` runs the end-to-end suite (compile protos -> run gdbuf -> compile GDExtension).
-  - Requires: `go`, `protoc` (v25.1+), `make`, `cmake`, `ninja`, C++ compiler.
+  - Requires: `go`, `protoc` (v25.1+), `make`, `cmake`, C++ compiler.
 
 ## Code Style & Conventions
 - **Go:** Standard formatting (`go fmt`). Imports grouped: stdlib, 3rd-party, internal (`github.com/LJ-Software/gdbuf/...`).

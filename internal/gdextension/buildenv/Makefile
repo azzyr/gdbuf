@@ -4,26 +4,26 @@
 build-linux: build-linux-debug-single build-linux-release-single
 
 build-linux-debug-single:
-	cmake -B build/linux/debug_single -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_SYSTEM_NAME=linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=single -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-linux.toolchain.cmake
+	cmake -B build/linux/debug_single -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_SYSTEM_NAME=linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=single -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-linux.toolchain.cmake
 	cmake --build build/linux/debug_single
 	mkdir -p build/linux/bin
 	cp build/linux/debug_single/bin/* build/linux/bin/
 	cp build/linux/debug_single/compile_commands.json ./
 
 build-linux-release-single:
-	cmake -B build/linux/release_single -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_SYSTEM_NAME=linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 -DGODOTCPP_TARGET=template_release -DGODOTCPP_PRECISION=single -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-linux.toolchain.cmake
+	cmake -B build/linux/release_single -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_SYSTEM_NAME=linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 -DGODOTCPP_TARGET=template_release -DGODOTCPP_PRECISION=single -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-linux.toolchain.cmake
 	cmake --build build/linux/release_single
 	mkdir -p build/linux/bin
 	cp build/linux/release_single/bin/* build/linux/bin/
 
 build-linux-debug-double:
-	cmake -B build/linux/debug_double -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_SYSTEM_NAME=linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=double -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-linux.toolchain.cmake
+	cmake -B build/linux/debug_double -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_SYSTEM_NAME=linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=double -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-linux.toolchain.cmake
 	cmake --build build/linux/debug_double
 	mkdir -p build/linux/bin
 	cp build/linux/debug_double/bin/* build/linux/bin/
 
 build-linux-release-double:
-	cmake -B build/linux/release_double -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_SYSTEM_NAME=linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 -DGODOTCPP_TARGET=template_release -DGODOTCPP_PRECISION=double -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-linux.toolchain.cmake
+	cmake -B build/linux/release_double -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_SYSTEM_NAME=linux -DCMAKE_SYSTEM_PROCESSOR=x86_64 -DGODOTCPP_TARGET=template_release -DGODOTCPP_PRECISION=double -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-linux.toolchain.cmake
 	cmake --build build/linux/release_double
 	mkdir -p build/linux/bin
 	cp build/linux/release_double/bin/* build/linux/bin/

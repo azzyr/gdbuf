@@ -35,10 +35,6 @@ func (i *arrayFlags) Set(value string) error {
 }
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	}))
-
 	var includeDirs arrayFlags
 	flag.Var(&includeDirs, "include", "include directories for proto files")
 	protoInputDirPtr := flag.String("proto", "", "path to proto definition files")
@@ -57,6 +53,27 @@ func main() {
 		fmt.Printf("git commit: %s\n", Commit)
 		os.Exit(0)
 	}
+
+	var logHandler slog.Handler
+	if !*stdoutPtr {
+		// In TUI mode, write logs to a file to avoid corrupting the UI
+		logFile, err := os.Create("gdbuf.log")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "could not create log file: %v\n", err)
+			os.Exit(1)
+		}
+		// We don't close logFile here as we want it open for the duration of the program
+		// It will be closed when the process exits
+		logHandler = slog.NewTextHandler(logFile, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})
+	} else {
+		logHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelDebug,
+		})
+	}
+
+	logger := slog.New(logHandler)
 
 	logger.Info("starting gdbuf", "version", Version)
 

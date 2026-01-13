@@ -89,7 +89,7 @@ func (gde *GDExtensionBuilder) ExtractNanopbGenerator(dst string) error {
 	if err != nil {
 		return err
 	}
-	if err := copyFS(genFS, dst); err != nil {
+	if err := copyFS(genFS, dst, nil); err != nil {
 		return err
 	}
 
@@ -123,7 +123,7 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 		return fmt.Errorf("could not get build environment fs: %w", err)
 	}
 
-	if err = copyFS(buildEnv, buildDir); err != nil {
+	if err = copyFS(buildEnv, buildDir, nil); err != nil {
 		return fmt.Errorf("could not copy build environment to build directory: %w", err)
 	}
 
@@ -133,7 +133,7 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 		return fmt.Errorf("could not remove src directory in build directory: %w", err)
 	}
 
-	if err = copyFS(os.DirFS(generatedCppSourceDir), buildDir); err != nil {
+	if err = copyFS(os.DirFS(generatedCppSourceDir), buildDir, nil); err != nil {
 		return fmt.Errorf("could not copy custom build files to build directory: %w", err)
 	}
 
@@ -144,7 +144,7 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 		if err := os.MkdirAll(docsDest, 0755); err != nil {
 			return fmt.Errorf("could not create docs directory in build dir: %w", err)
 		}
-		if err := copyFS(os.DirFS(docsSrc), docsDest); err != nil {
+		if err := copyFS(os.DirFS(docsSrc), docsDest, nil); err != nil {
 			return fmt.Errorf("could not copy doc files to build dir: %w", err)
 		}
 	}
@@ -233,13 +233,26 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 	buildCmd.Dir = buildDir
 	buildCmd.Stdout = stdout
 	buildCmd.Stderr = stderr
+
+	// Use a pipe to capture stdout if stdout/stderr are not directly os.Stdout/os.Stderr
+	// ensuring we can flush the buffer in progressWriter
+	if stdout != os.Stdout {
+		// When using TUI, we might need to ensure line buffering or force flushing
+		// But exec.Command doesn't support PTY easily cross-platform.
+		// However, make usually buffers output when not connected to a TTY.
+		// We can try to force line buffering via stdbuf on Linux if available, or just accept chunks.
+		// Since we handle chunks in progressWriter, this should be fine.
+	}
+
 	err = buildCmd.Run()
 	if err != nil {
 		return fmt.Errorf("build error: %w", err)
 	}
+	fmt.Fprintln(stdout, "Build command finished, copying artifacts...")
 	gde.logger.Info("build successful")
 
-	if err = copyFS(os.DirFS(filepath.Join(buildDir, "build", buildSubdir, "bin")), filepath.Join(buildDir, "out", "dist")); err != nil {
+	fmt.Fprintln(stdout, "Copying binaries to intermediate location...")
+	if err = copyFS(os.DirFS(filepath.Join(buildDir, "build", buildSubdir, "bin")), filepath.Join(buildDir, "out", "dist"), stdout); err != nil {
 		return fmt.Errorf("could not copy build output to output directory: %w", err)
 	}
 
@@ -247,7 +260,8 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 		return fmt.Errorf("could not create output directory: %w", err)
 	}
 
-	if err = copyFS(os.DirFS(filepath.Join(buildDir, "out")), outputDir); err != nil {
+	fmt.Fprintln(stdout, "Copying artifacts to final destination...")
+	if err = copyFS(os.DirFS(filepath.Join(buildDir, "out")), outputDir, stdout); err != nil {
 		return fmt.Errorf("could not copy build output to output directory: %w", err)
 	}
 
@@ -257,11 +271,13 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 		if err := os.MkdirAll(docsDest, 0755); err != nil {
 			return fmt.Errorf("could not create docs directory in output: %w", err)
 		}
-		if err := copyFS(os.DirFS(docsSrc), docsDest); err != nil {
+		fmt.Fprintln(stdout, "Copying documentation...")
+		if err := copyFS(os.DirFS(docsSrc), docsDest, stdout); err != nil {
 			return fmt.Errorf("could not copy doc files to output: %w", err)
 		}
 	}
 
+	fmt.Fprintln(stdout, "Build procedure complete.")
 	return nil
 }
 
@@ -435,7 +451,8 @@ func unzip(src, dest string) error {
 	return nil
 }
 
-func copyFS(src fs.FS, dst string) error {
+func copyFS(src fs.FS, dst string, logWriter io.Writer) error {
+	fileCount := 0
 	return fs.WalkDir(src, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -443,6 +460,14 @@ func copyFS(src fs.FS, dst string) error {
 		dstPath := filepath.Join(dst, path)
 		if d.IsDir() {
 			return os.MkdirAll(dstPath, 0755)
+		}
+
+		if logWriter != nil {
+			// Throttle log output for file copies to prevent flooding the TUI
+			fileCount++
+			if fileCount%10 == 0 {
+				fmt.Fprintln(logWriter, "Copying "+path)
+			}
 		}
 
 		srcFile, err := src.Open(path)
