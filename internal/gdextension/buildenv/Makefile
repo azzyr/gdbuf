@@ -56,7 +56,7 @@ build-windows-release-double:
 	cp build/windows/release_double/bin/* build/windows/bin/
 
 # Web
-build-web: build-web-debug-single build-web-release-single
+build-web: build-web-debug-single build-web-release-single build-web-debug-single-nothreads build-web-release-single-nothreads
 
 build-web-debug-single:
 	cmake -B build/web/debug_single -DCMAKE_TOOLCHAIN_FILE=cmake/web-wasm32.toolchain.cmake -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=single -DGODOTCPP_THREADS=ON
@@ -69,6 +69,18 @@ build-web-release-single:
 	cmake --build build/web/release_single
 	mkdir -p build/web/bin
 	cp build/web/release_single/bin/* build/web/bin/
+
+build-web-debug-single-nothreads:
+	cmake -B build/web/debug_single_nothreads -DCMAKE_TOOLCHAIN_FILE=cmake/web-wasm32.toolchain.cmake -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=single -DGODOTCPP_THREADS=OFF
+	cmake --build build/web/debug_single_nothreads
+	mkdir -p build/web/bin
+	cp build/web/debug_single_nothreads/bin/* build/web/bin/
+
+build-web-release-single-nothreads:
+	cmake -B build/web/release_single_nothreads -DCMAKE_TOOLCHAIN_FILE=cmake/web-wasm32.toolchain.cmake -DGODOTCPP_TARGET=template_release -DGODOTCPP_PRECISION=single -DGODOTCPP_THREADS=OFF
+	cmake --build build/web/release_single_nothreads
+	mkdir -p build/web/bin
+	cp build/web/release_single_nothreads/bin/* build/web/bin/
 
 build-web-debug-double:
 	cmake -B build/web/debug_double -DCMAKE_TOOLCHAIN_FILE=cmake/web-wasm32.toolchain.cmake -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=double -DGODOTCPP_THREADS=ON
@@ -83,7 +95,7 @@ build-web-release-double:
 	cp build/web/release_double/bin/* build/web/bin/
 
 # Android
-build-android: build-android-debug-single build-android-release-single
+build-android: build-android-debug-single build-android-release-single build-android-debug-single-nothreads build-android-release-single-nothreads
 
 build-android-debug-single:
 	cmake -B build/android/debug_single -DCMAKE_TOOLCHAIN_FILE=cmake/android.toolchain.cmake -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=single -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM_LEVEL=24 -DGODOTCPP_THREADS=ON
@@ -96,6 +108,18 @@ build-android-release-single:
 	cmake --build build/android/release_single
 	mkdir -p build/android/bin
 	cp build/android/release_single/bin/* build/android/bin/
+
+build-android-debug-single-nothreads:
+	cmake -B build/android/debug_single_nothreads -DCMAKE_TOOLCHAIN_FILE=cmake/android.toolchain.cmake -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=single -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM_LEVEL=24 -DGODOTCPP_THREADS=OFF
+	cmake --build build/android/debug_single_nothreads
+	mkdir -p build/android/bin
+	cp build/android/debug_single_nothreads/bin/* build/android/bin/
+
+build-android-release-single-nothreads:
+	cmake -B build/android/release_single_nothreads -DCMAKE_TOOLCHAIN_FILE=cmake/android.toolchain.cmake -DGODOTCPP_TARGET=template_release -DGODOTCPP_PRECISION=single -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM_LEVEL=24 -DGODOTCPP_THREADS=OFF
+	cmake --build build/android/release_single_nothreads
+	mkdir -p build/android/bin
+	cp build/android/release_single_nothreads/bin/* build/android/bin/
 
 build-android-debug-double:
 	cmake -B build/android/debug_double -DCMAKE_TOOLCHAIN_FILE=cmake/android.toolchain.cmake -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=double -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM_LEVEL=24 -DGODOTCPP_THREADS=ON
