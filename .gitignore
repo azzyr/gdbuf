@@ -31,6 +31,7 @@ go.work.sum
 # .idea/
 # .vscode/
 
+*.log
 test/*.desc.binpb
 test/out*/
 test/genout*/
