@@ -8,7 +8,7 @@
   - Requires: `go`, `protoc` (v25.1+), `make`, `cmake`, C++ compiler.
 
 ## Code Style & Conventions
-- **Go:** Standard formatting (`go fmt`). Imports grouped: stdlib, 3rd-party, internal (`github.com/LJ-Software/gdbuf/...`).
+- **Go:** Standard formatting (`go fmt`). Imports grouped: stdlib, 3rd-party, internal (`github.com/onion-4-dinner/gdbuf/...`).
 - **C++:** Follow Godot GDExtension conventions. Templates in `internal/codegen/templates`.
 - **Logging:** Use `log/slog` exclusively.
 - **Errors:** Wrap with context: `fmt.Errorf("context: %w", err)`.

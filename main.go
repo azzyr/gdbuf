@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/LJ-Software/gdbuf/internal/codegen"
-	"github.com/LJ-Software/gdbuf/internal/gdextension"
-	"github.com/LJ-Software/gdbuf/internal/protoc"
-	"github.com/LJ-Software/gdbuf/internal/tui"
+	"github.com/onion-4-dinner/gdbuf/internal/codegen"
+	"github.com/onion-4-dinner/gdbuf/internal/gdextension"
+	"github.com/onion-4-dinner/gdbuf/internal/protoc"
+	"github.com/onion-4-dinner/gdbuf/internal/tui"
 )
 
 var (

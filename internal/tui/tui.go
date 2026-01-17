@@ -9,11 +9,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/LJ-Software/gdbuf/internal/gdextension"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/onion-4-dinner/gdbuf/internal/gdextension"
 )
 
 type progressMsg float64

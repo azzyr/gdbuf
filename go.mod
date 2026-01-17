@@ -1,4 +1,4 @@
-module github.com/LJ-Software/gdbuf
+module github.com/onion-4-dinner/gdbuf
 
 go 1.25.0
 

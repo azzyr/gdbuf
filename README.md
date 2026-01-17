@@ -32,7 +32,7 @@ Much care and guidance was exercised.
 
 ### Build `gdbuf`
 ```bash
-git clone --recursive https://github.com/LJ-Software/gdbuf.git
+git clone --recursive https://github.com/onion-4-dinner/gdbuf.git
 cd gdbuf
 make build
 # The binary will be in bin/gdbuf
