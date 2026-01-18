@@ -44,6 +44,7 @@ func main() {
 	generateOnlyPtr := flag.Bool("generate-only", false, "only generate c++ code, do not compile gdextension")
 	platformPtr := flag.String("platform", "", "target platform (linux, windows, web, android)")
 	stdoutPtr := flag.Bool("stdout", false, "print build output to stdout instead of using TUI")
+	cacheDirPtr := flag.String("cache", "", "cache directory for build artifacts (default: system cache)")
 	versionPtr := flag.Bool("version", false, "print version information and exit")
 
 	flag.Parse()
@@ -112,7 +113,7 @@ func main() {
 	}
 	defer os.RemoveAll(genTmpDir)
 
-	gdExtensionBuilder := gdextension.NewGDExtensionBuilder(logger)
+	gdExtensionBuilder := gdextension.NewGDExtensionBuilder(logger, *cacheDirPtr)
 	if err := gdExtensionBuilder.ExtractNanopbGenerator(genTmpDir); err != nil {
 		logger.Error("could not extract nanopb generator", "err", err)
 		os.Exit(1)

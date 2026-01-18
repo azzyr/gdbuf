@@ -75,12 +75,14 @@ var androidNDKURLs = map[string]string{
 }
 
 type GDExtensionBuilder struct {
-	logger *slog.Logger
+	logger   *slog.Logger
+	cacheDir string
 }
 
-func NewGDExtensionBuilder(logger *slog.Logger) *GDExtensionBuilder {
+func NewGDExtensionBuilder(logger *slog.Logger, cacheDir string) *GDExtensionBuilder {
 	return &GDExtensionBuilder{
-		logger: logger,
+		logger:   logger,
+		cacheDir: cacheDir,
 	}
 }
 
@@ -102,14 +104,25 @@ func (gde *GDExtensionBuilder) ExtractNanopbGenerator(dst string) error {
 }
 
 func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform string, generateOnly bool, stdout, stderr io.Writer) error {
-	// Determine build directory: UserCacheDir/gdbuf
-	userCacheDir, err := os.UserCacheDir()
+	// Determine build directory: custom cache or UserCacheDir/gdbuf
 	var buildDir string
-	if err != nil {
-		// Fallback
-		buildDir = filepath.Join(".", ".gdbuf_cache")
-	} else {
+	var userCacheDir string
+
+	if gde.cacheDir != "" {
+		// Use custom cache directory
+		userCacheDir = gde.cacheDir
 		buildDir = filepath.Join(userCacheDir, "gdbuf")
+	} else {
+		// Use system cache directory
+		var err error
+		userCacheDir, err = os.UserCacheDir()
+		if err != nil {
+			// Fallback
+			userCacheDir = "."
+			buildDir = filepath.Join(".", ".gdbuf_cache")
+		} else {
+			buildDir = filepath.Join(userCacheDir, "gdbuf")
+		}
 	}
 
 	if err := os.MkdirAll(buildDir, 0755); err != nil {
