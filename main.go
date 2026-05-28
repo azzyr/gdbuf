@@ -13,7 +13,6 @@ import (
 	"github.com/onion-4-dinner/gdbuf/internal/codegen"
 	"github.com/onion-4-dinner/gdbuf/internal/gdextension"
 	"github.com/onion-4-dinner/gdbuf/internal/protoc"
-	"github.com/onion-4-dinner/gdbuf/internal/tui"
 )
 
 var (
@@ -43,7 +42,6 @@ func main() {
 	extensionArtifactOutputDirPtr := flag.String("out", "./out", "output directory location of the generated gdextension")
 	generateOnlyPtr := flag.Bool("generate-only", false, "only generate c++ code, do not compile gdextension")
 	platformPtr := flag.String("platform", "", "target platform (linux, windows, web, android)")
-	stdoutPtr := flag.Bool("stdout", false, "print build output to stdout instead of using TUI")
 	cacheDirPtr := flag.String("cache", "", "cache directory for build artifacts (default: system cache)")
 	versionPtr := flag.Bool("version", false, "print version information and exit")
 
@@ -56,23 +54,7 @@ func main() {
 	}
 
 	var logHandler slog.Handler
-	if !*stdoutPtr {
-		// In TUI mode, write logs to a file to avoid corrupting the UI
-		logFile, err := os.Create("gdbuf.log")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "could not create log file: %v\n", err)
-			os.Exit(1)
-		}
-		// We don't close logFile here as we want it open for the duration of the program
-		// It will be closed when the process exits
-		logHandler = slog.NewTextHandler(logFile, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		})
-	} else {
-		logHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		})
-	}
+	logHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{ Level: slog.LevelDebug, } )
 
 	logger := slog.New(logHandler)
 
@@ -174,18 +156,11 @@ func main() {
 	}
 
 	if len(validPlatforms) > 0 {
-		if *stdoutPtr {
-			for _, platform := range validPlatforms {
-				logger.Info("building gdextension", "platform", platform)
-				err = gdExtensionBuilder.Build(*cppOutputDirPtr, *extensionArtifactOutputDirPtr, platform, *generateOnlyPtr, os.Stdout, os.Stderr)
-				if err != nil {
-					logger.Error("problem building gdextension", "platform", platform, "err", err)
-					os.Exit(1)
-				}
-			}
-		} else {
-			if err := tui.Run(gdExtensionBuilder, *cppOutputDirPtr, *extensionArtifactOutputDirPtr, validPlatforms, *generateOnlyPtr); err != nil {
-				logger.Error("problem building gdextension", "err", err)
+		for _, platform := range validPlatforms {
+			logger.Info("building gdextension", "platform", platform)
+			err = gdExtensionBuilder.Build(*cppOutputDirPtr, *extensionArtifactOutputDirPtr, platform, *generateOnlyPtr, os.Stdout, os.Stderr)
+			if err != nil {
+				logger.Error("problem building gdextension", "platform", platform, "err", err)
 				os.Exit(1)
 			}
 		}
