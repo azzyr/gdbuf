@@ -3,6 +3,7 @@ package gdextension
 import (
 	"archive/zip"
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -146,7 +147,11 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 		return fmt.Errorf("could not remove src directory in build directory: %w", err)
 	}
 
-	if err = copyFS(os.DirFS(generatedCppSourceDir), buildDir, nil); err != nil {
+	copyExcludes, err := computeCopyExcludes(generatedCppSourceDir, buildDir)
+	if err != nil {
+		return fmt.Errorf("could not compute copy exclusions: %w", err)
+	}
+	if err = copyFS(os.DirFS(generatedCppSourceDir), buildDir, nil, copyExcludes...); err != nil {
 		return fmt.Errorf("could not copy custom build files to build directory: %w", err)
 	}
 
@@ -464,12 +469,32 @@ func unzip(src, dest string) error {
 	return nil
 }
 
-func copyFS(src fs.FS, dst string, logWriter io.Writer) error {
+func copyFS(src fs.FS, dst string, logWriter io.Writer, excludePrefixes ...string) error {
+	var normalizedPrefixes []string
+	for _, prefix := range excludePrefixes {
+		normalized := normalizeFSPath(prefix)
+		if normalized == "." || normalized == "" {
+			continue
+		}
+		normalizedPrefixes = append(normalizedPrefixes, normalized)
+	}
+
 	fileCount := 0
 	return fs.WalkDir(src, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+
+		normalizedPath := normalizeFSPath(path)
+		for _, prefix := range normalizedPrefixes {
+			if normalizedPath == prefix || strings.HasPrefix(normalizedPath, prefix+"/") {
+				if d.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
+		}
+
 		dstPath := filepath.Join(dst, path)
 		if d.IsDir() {
 			return os.MkdirAll(dstPath, 0755)
@@ -498,4 +523,42 @@ func copyFS(src fs.FS, dst string, logWriter io.Writer) error {
 		_, err = io.Copy(dstFile, srcFile)
 		return err
 	})
+}
+
+func computeCopyExcludes(srcRoot, dst string) ([]string, error) {
+	srcAbs, err := filepath.Abs(srcRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	dstAbs, err := filepath.Abs(dst)
+	if err != nil {
+		return nil, err
+	}
+
+	rel, err := filepath.Rel(srcAbs, dstAbs)
+	if err != nil {
+		return nil, err
+	}
+
+	if rel == "." || rel == "" {
+		return nil, errors.New("source and destination directories must be different")
+	}
+
+	if strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." {
+		return nil, nil
+	}
+
+	return []string{filepath.ToSlash(rel)}, nil
+}
+
+func normalizeFSPath(path string) string {
+	path = filepath.ToSlash(path)
+	path = strings.TrimPrefix(path, "./")
+	path = strings.TrimPrefix(path, "/")
+	path = strings.TrimSuffix(path, "/")
+	if path == "" {
+		return "."
+	}
+	return path
 }
