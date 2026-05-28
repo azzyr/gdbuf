@@ -5,10 +5,10 @@ on:
     branches:
       - main
     paths-ignore:
-      - docs/**
-      - **.md
-      - .gitignore
-      - .gitmodules
+      - 'docs/**'
+      - '**.md'
+      - '.gitignore'
+      - '.gitmodules'
 
 permissions:
   contents: write
