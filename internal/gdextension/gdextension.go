@@ -104,7 +104,7 @@ func (gde *GDExtensionBuilder) ExtractNanopbGenerator(dst string) error {
 	return nil
 }
 
-func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform string, generateOnly bool, stdout, stderr io.Writer) error {
+func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform string, targetName string, generateOnly bool, stdout, stderr io.Writer) error {
 	// Determine build directory: custom cache or UserCacheDir/gdbuf
 	var buildDir string
 	var userCacheDir string
@@ -173,67 +173,36 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 	}
 
 	// all files are in place, try to build
-	var buildTarget string
-	var buildSubdir string
-	// Default to host OS
-	switch runtime.GOOS {
-	case "linux":
-		buildTarget = "build-linux"
-		buildSubdir = "linux"
-	case "darwin":
-		buildTarget = "build-macos"
-		buildSubdir = "macos"
-	case "windows":
-		buildTarget = "build-windows"
-		buildSubdir = "windows"
-	default:
-		return fmt.Errorf("unsupported os: %s", runtime.GOOS)
-	}
-
 	androidNDKHome := os.Getenv("ANDROID_NDK_HOME")
 	emsdkHome := os.Getenv("EMSDK")
 
-	if platform != "" {
-		switch platform {
-		case "linux":
-			buildTarget = "build-linux"
-			buildSubdir = "linux"
-		case "windows":
-			buildTarget = "build-windows"
-			buildSubdir = "windows"
-		case "web":
-			buildTarget = "build-web"
-			buildSubdir = "web"
-			if emsdkHome == "" {
-				gde.logger.Info("EMSDK not set, checking for managed Emscripten SDK")
-				managedEmsdkPath, err := gde.ensureEmscripten(userCacheDir, stdout, stderr)
-				if err != nil {
-					return fmt.Errorf("failed to setup Emscripten SDK: %w", err)
-				}
-				emsdkHome = managedEmsdkPath
-			} else {
-				gde.logger.Info("using existing EMSDK", "path", emsdkHome)
+	switch platform {
+	case "web":
+		if emsdkHome == "" {
+			gde.logger.Info("EMSDK not set, checking for managed Emscripten SDK")
+			managedEmsdkPath, err := gde.ensureEmscripten(userCacheDir, stdout, stderr)
+			if err != nil {
+				return fmt.Errorf("failed to setup Emscripten SDK: %w", err)
 			}
-		case "android":
-			buildTarget = "build-android"
-			buildSubdir = "android"
-			// Ensure NDK is available
-			if androidNDKHome == "" {
-				gde.logger.Info("ANDROID_NDK_HOME not set, checking for managed NDK")
-				managedNDKPath, err := gde.ensureAndroidNDK(userCacheDir)
-				if err != nil {
-					return fmt.Errorf("failed to setup android NDK: %w", err)
-				}
-				androidNDKHome = managedNDKPath
-			} else {
-				gde.logger.Info("using existing ANDROID_NDK_HOME", "path", androidNDKHome)
+			emsdkHome = managedEmsdkPath
+		} else {
+			gde.logger.Info("using existing EMSDK", "path", emsdkHome)
+		}
+	case "android":
+		// Ensure NDK is available
+		if androidNDKHome == "" {
+			gde.logger.Info("ANDROID_NDK_HOME not set, checking for managed NDK")
+			managedNDKPath, err := gde.ensureAndroidNDK(userCacheDir)
+			if err != nil {
+				return fmt.Errorf("failed to setup android NDK: %w", err)
 			}
-		default:
-			return fmt.Errorf("unsupported platform: %s", platform)
+			androidNDKHome = managedNDKPath
+		} else {
+			gde.logger.Info("using existing ANDROID_NDK_HOME", "path", androidNDKHome)
 		}
 	}
 
-	buildCmd := exec.Command("make", buildTarget)
+	buildCmd := exec.Command("make", targetName)
 
 	buildCmd.Env = os.Environ()
 	buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("WORKSPACE=%s", buildDir))
@@ -260,16 +229,6 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 	buildCmd.Stdout = stdout
 	buildCmd.Stderr = stderr
 
-	// Use a pipe to capture stdout if stdout/stderr are not directly os.Stdout/os.Stderr
-	// ensuring we can flush the buffer in progressWriter
-	if stdout != os.Stdout {
-		// When using TUI, we might need to ensure line buffering or force flushing
-		// But exec.Command doesn't support PTY easily cross-platform.
-		// However, make usually buffers output when not connected to a TTY.
-		// We can try to force line buffering via stdbuf on Linux if available, or just accept chunks.
-		// Since we handle chunks in progressWriter, this should be fine.
-	}
-
 	err = buildCmd.Run()
 	if err != nil {
 		return fmt.Errorf("build error: %w", err)
@@ -278,7 +237,7 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 	gde.logger.Info("build successful")
 
 	fmt.Fprintln(stdout, "Copying binaries to intermediate location...")
-	if err = copyFS(os.DirFS(filepath.Join(buildDir, "build", buildSubdir, "bin")), filepath.Join(buildDir, "out", "dist"), stdout); err != nil {
+	if err = copyFS(os.DirFS(filepath.Join(buildDir, "build", platform, "bin")), filepath.Join(buildDir, "out", "dist"), stdout); err != nil {
 		return fmt.Errorf("could not copy build output to output directory: %w", err)
 	}
 

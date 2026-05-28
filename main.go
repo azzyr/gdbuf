@@ -45,6 +45,10 @@ func main() {
 	cacheDirPtr := flag.String("cache", "", "cache directory for build artifacts (default: system cache)")
 	versionPtr := flag.Bool("version", false, "print version information and exit")
 
+	debugPtr := flag.Bool("debug", false, "enable debug build symbols and tooling configurations")
+	threadedPtr := flag.Bool("threaded", false, "enable multi-threaded support profiles")
+	doublePtr := flag.Bool("double", false, "enable double-precision floating point rendering variables")
+
 	flag.Parse()
 
 	if *versionPtr {
@@ -157,15 +161,33 @@ func main() {
 
 	if len(validPlatforms) > 0 {
 		for _, platform := range validPlatforms {
-			logger.Info("building gdextension", "platform", platform)
-			err = gdExtensionBuilder.Build(*cppOutputDirPtr, *extensionArtifactOutputDirPtr, platform, *generateOnlyPtr, os.Stdout, os.Stderr)
+			targetName := "build-" + platform
+
+			if *debugPtr {
+				targetName += "-debug"
+			} else {
+				targetName += "-release"
+			}
+
+			if *doublePtr {
+				targetName += "-double"
+			} else {
+				targetName += "-single"
+			}
+
+			if platform == "web" && !*threadedPtr {
+				targetName += "-nothreads"
+			}
+
+			logger.Info("building gdextension", "platform", platform, "target", targetName)
+			err = gdExtensionBuilder.Build(*cppOutputDirPtr, *extensionArtifactOutputDirPtr, platform, targetName, *generateOnlyPtr, os.Stdout, os.Stderr)
 			if err != nil {
-				logger.Error("problem building gdextension", "platform", platform, "err", err)
+				logger.Error("problem building gdextension", "platform", platform, "target", targetName, "err", err)
 				os.Exit(1)
 			}
 		}
 	} else {
-		logger.Warn("no valid platforms specified, nothing to build")
+		logger.Warn("no valid platform configuration specified, nothing to build")
 	}
 }
 
