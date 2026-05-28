@@ -97,6 +97,7 @@ type protoMessageField struct {
 	IsRepeated          bool
 	IsEnum              bool
 	IsMap               bool
+	IsTypedArray        bool
 	MapKeyGodotType     string
 	MapValueGodotType   string
 	MapValueIsCustom    bool
@@ -161,6 +162,9 @@ func getTemplateFuncMap() template.FuncMap {
 		case "godot::Array":
 			return "godot::Variant::ARRAY"
 		default:
+			if strings.HasPrefix(godotType, "godot::TypedArray<") {
+				return "godot::Variant::ARRAY"
+			}
 			return "godot::Variant::NIL"
 		}
 	}
@@ -190,7 +194,30 @@ func getTemplateFuncMap() template.FuncMap {
 		case "godot::Array":
 			return "Array"
 		default:
+			if strings.HasPrefix(godotType, "godot::TypedArray<") {
+				return "Array"
+			}
 			return "Variant"
+		}
+	}
+	f["godotArrayElementHint"] = func(godotType string) string {
+		switch godotType {
+		case "bool":
+			return "bool"
+		case "int32_t", "int64_t", "uint32_t", "uint64_t":
+			return "int"
+		case "float", "double":
+			return "float"
+		case "godot::String":
+			return "String"
+		case "godot::PackedByteArray":
+			return "PackedByteArray"
+		case "godot::PackedStringArray":
+			return "PackedStringArray"
+		case "godot::Dictionary":
+			return "Dictionary"
+		default:
+			return ""
 		}
 	}
 	return f
@@ -486,7 +513,27 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 						if field.GetLabel() == descriptorpb.FieldDescriptorProto_LABEL_REPEATED {
 							cg.logger.Debug("Repeated field", "name", field.GetName(), "before", protoMessageField.IsCustomType)
 							protoMessageField.IsRepeated = true
-							protoMessageField.GodotType = "godot::Array"
+							if protoMessageField.IsInnerCustomType {
+								protoMessageField.GodotType = fmt.Sprintf("godot::TypedArray<%s>", protoMessageField.InnerGodotType)
+								protoMessageField.IsTypedArray = true
+							} else {
+								switch protoMessageField.InnerGodotType {
+								case "bool":
+									protoMessageField.GodotType = "godot::TypedArray<bool>"
+									protoMessageField.IsTypedArray = true
+								case "int32_t", "int64_t", "uint32_t", "uint64_t":
+									protoMessageField.GodotType = "godot::TypedArray<int64_t>"
+									protoMessageField.IsTypedArray = true
+								case "float", "double":
+									protoMessageField.GodotType = "godot::TypedArray<double>"
+									protoMessageField.IsTypedArray = true
+								case "godot::String":
+									protoMessageField.GodotType = "godot::TypedArray<godot::String>"
+									protoMessageField.IsTypedArray = true
+								default:
+									protoMessageField.GodotType = "godot::Array"
+								}
+							}
 							protoMessageField.GodotClassName = "Array"
 							protoMessageField.IsCustomType = false
 							cg.logger.Debug("Repeated field", "name", field.GetName(), "after", protoMessageField.IsCustomType)
