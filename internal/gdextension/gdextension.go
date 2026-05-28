@@ -237,6 +237,14 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 
 	buildCmd.Env = os.Environ()
 	buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("WORKSPACE=%s", buildDir))
+	cmakeBin := os.Getenv("CMAKE")
+	if cmakeBin == "" {
+		cmakeBin, err = exec.LookPath("cmake")
+		if err != nil {
+			return fmt.Errorf("could not locate cmake executable in PATH: %w", err)
+		}
+	}
+	buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("CMAKE=%s", cmakeBin))
 	if androidNDKHome != "" {
 		buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("ANDROID_NDK_HOME=%s", androidNDKHome))
 	}
