@@ -120,7 +120,6 @@ func (c *ProtoCompiler) CompileNanopb(protoFilesDirPath string, includeDirs []st
 			args = append(args, "-I", dir)
 		}
 	} else {
-		args = append(args, "-I", ".")
 		args = append(args, "-I", protoFilesDirPath)
 	}
 
