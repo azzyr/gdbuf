@@ -1,6 +1,0 @@
-syntax = "proto3";
-package nested.deeply;
-
-message DeeplyNestedMessage {
-  string nesting_level = 1;
-}

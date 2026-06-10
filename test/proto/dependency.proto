@@ -1,7 +1,0 @@
-syntax = "proto3";
-
-package dependency;
-
-message DependencyMessage {
-  string name = 1;
-}
