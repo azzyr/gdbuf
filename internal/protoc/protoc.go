@@ -55,7 +55,6 @@ func (c *ProtoCompiler) BuildDescriptorSet(protoFilesDirPath string, includeDirs
 			args = append(args, "-I", dir)
 		}
 	} else {
-		args = append(args, "-I", ".") // Include current dir as the include root
 		args = append(args, "-I", protoFilesDirPath)
 	}
 
