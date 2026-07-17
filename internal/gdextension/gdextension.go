@@ -1,14 +1,12 @@
 package gdextension
 
 import (
-	"archive/zip"
 	"embed"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -63,17 +61,6 @@ const gdbufNamingStyleScript = `class GdbufNamingStyle:
     def bytes_type(self, struct_name, name):
         return "%s_%s_t" % (struct_name, name)
 `
-
-const (
-	androidNDKVersion = "r28b"
-	emscriptenVersion = "3.1.64"
-)
-
-var androidNDKURLs = map[string]string{
-	"linux":   "https://dl.google.com/android/repository/android-ndk-" + androidNDKVersion + "-linux.zip",
-	"windows": "https://dl.google.com/android/repository/android-ndk-" + androidNDKVersion + "-windows.zip",
-	"darwin":  "https://dl.google.com/android/repository/android-ndk-" + androidNDKVersion + "-darwin.zip",
-}
 
 type GDExtensionBuilder struct {
 	logger   *slog.Logger
@@ -179,27 +166,14 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 	switch platform {
 	case "web":
 		if emsdkHome == "" {
-			gde.logger.Info("EMSDK not set, checking for managed Emscripten SDK")
-			managedEmsdkPath, err := gde.ensureEmscripten(userCacheDir, stdout, stderr)
-			if err != nil {
-				return fmt.Errorf("failed to setup Emscripten SDK: %w", err)
-			}
-			emsdkHome = managedEmsdkPath
-		} else {
-			gde.logger.Info("using existing EMSDK", "path", emsdkHome)
+			return errors.New("EMSDK environment variable is not set. Please install Emscripten SDK and set EMSDK to its root directory")
 		}
+		gde.logger.Info("using system EMSDK", "path", emsdkHome)
 	case "android":
-		// Ensure NDK is available
 		if androidNDKHome == "" {
-			gde.logger.Info("ANDROID_NDK_HOME not set, checking for managed NDK")
-			managedNDKPath, err := gde.ensureAndroidNDK(userCacheDir)
-			if err != nil {
-				return fmt.Errorf("failed to setup android NDK: %w", err)
-			}
-			androidNDKHome = managedNDKPath
-		} else {
-			gde.logger.Info("using existing ANDROID_NDK_HOME", "path", androidNDKHome)
+			return errors.New("ANDROID_NDK_HOME environment variable is not set. Please install Android NDK and set ANDROID_NDK_HOME to its root directory")
 		}
+		gde.logger.Info("using system ANDROID_NDK_HOME", "path", androidNDKHome)
 	}
 
 	buildCmd := exec.Command("make", targetName)
@@ -263,176 +237,6 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 	}
 
 	fmt.Fprintln(stdout, "Build procedure complete.")
-	return nil
-}
-
-func (gde *GDExtensionBuilder) ensureAndroidNDK(cacheDir string) (string, error) {
-	ndkDirName := fmt.Sprintf("android-ndk-%s", androidNDKVersion)
-	ndkPath := filepath.Join(cacheDir, ndkDirName)
-
-	if _, err := os.Stat(ndkPath); err == nil {
-		gde.logger.Info("found managed android NDK", "path", ndkPath)
-		return ndkPath, nil
-	}
-
-	url, ok := androidNDKURLs[runtime.GOOS]
-	if !ok {
-		return "", fmt.Errorf("no android NDK download URL for OS: %s", runtime.GOOS)
-	}
-
-	zipPath := filepath.Join(cacheDir, fmt.Sprintf("android-ndk-%s.zip", androidNDKVersion))
-	gde.logger.Info("downloading android NDK", "url", url, "dest", zipPath)
-
-	if err := downloadFile(url, zipPath); err != nil {
-		return "", fmt.Errorf("failed to download NDK: %w", err)
-	}
-	defer os.Remove(zipPath)
-
-	gde.logger.Info("extracting android NDK", "src", zipPath, "dest", cacheDir)
-	if err := unzip(zipPath, cacheDir); err != nil {
-		return "", fmt.Errorf("failed to extract NDK: %w", err)
-	}
-
-	return ndkPath, nil
-}
-
-func (gde *GDExtensionBuilder) ensureEmscripten(cacheDir string, stdout, stderr io.Writer) (string, error) {
-	emsdkDir := filepath.Join(cacheDir, "emsdk")
-
-	if _, err := os.Stat(emsdkDir); err != nil {
-		url := "https://github.com/emscripten-core/emsdk/archive/refs/heads/main.zip"
-		zipPath := filepath.Join(cacheDir, "emsdk.zip")
-		gde.logger.Info("downloading emsdk", "url", url, "dest", zipPath)
-
-		if err := downloadFile(url, zipPath); err != nil {
-			return "", fmt.Errorf("failed to download emsdk: %w", err)
-		}
-		defer os.Remove(zipPath)
-
-		gde.logger.Info("extracting emsdk", "src", zipPath, "dest", cacheDir)
-		if err := unzip(zipPath, cacheDir); err != nil {
-			return "", fmt.Errorf("failed to extract emsdk: %w", err)
-		}
-
-		// Rename emsdk-main to emsdk
-		if err := os.Rename(filepath.Join(cacheDir, "emsdk-main"), emsdkDir); err != nil {
-			return "", fmt.Errorf("failed to rename emsdk dir: %w", err)
-		}
-	}
-
-	gde.logger.Info("checking emsdk version", "version", emscriptenVersion)
-
-	emsdkBin := "./emsdk"
-	if runtime.GOOS == "windows" {
-		emsdkBin = "emsdk.bat"
-	}
-
-	// Check if already installed to avoid re-running install (which checks network)
-	// This is a heuristic: checks for upstream/emscripten directory
-	if _, err := os.Stat(filepath.Join(emsdkDir, "upstream", "emscripten")); err != nil {
-		gde.logger.Info("installing emsdk", "version", emscriptenVersion)
-		cmd := exec.Command(emsdkBin, "install", emscriptenVersion)
-		cmd.Dir = emsdkDir
-		cmd.Stdout = stdout
-		cmd.Stderr = stderr
-		if err := cmd.Run(); err != nil {
-			return "", fmt.Errorf("failed to install emsdk version %s: %w", emscriptenVersion, err)
-		}
-	}
-
-	gde.logger.Info("activating emsdk", "version", emscriptenVersion)
-	cmd := exec.Command(emsdkBin, "activate", emscriptenVersion)
-	cmd.Dir = emsdkDir
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to activate emsdk version %s: %w", emscriptenVersion, err)
-	}
-
-	return emsdkDir, nil
-}
-
-func downloadFile(url, filepath string) error {
-	out, err := os.Create(filepath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("bad status: %s", resp.Status)
-	}
-
-	_, err = io.Copy(out, resp.Body)
-	return err
-}
-
-func unzip(src, dest string) error {
-	r, err := zip.OpenReader(src)
-	if err != nil {
-		return err
-	}
-	defer r.Close()
-
-	for _, f := range r.File {
-		fpath := filepath.Join(dest, f.Name)
-
-		if !strings.HasPrefix(fpath, filepath.Clean(dest)+string(os.PathSeparator)) {
-			return fmt.Errorf("illegal file path: %s", fpath)
-		}
-
-		if f.FileInfo().Mode()&os.ModeSymlink != 0 {
-			rc, err := f.Open()
-			if err != nil {
-				return err
-			}
-			linkTarget, err := io.ReadAll(rc)
-			rc.Close()
-			if err != nil {
-				return err
-			}
-
-			if err := os.Symlink(string(linkTarget), fpath); err != nil {
-				return err
-			}
-			continue
-		}
-
-		if f.FileInfo().IsDir() {
-			os.MkdirAll(fpath, os.ModePerm)
-			continue
-		}
-
-		if err = os.MkdirAll(filepath.Dir(fpath), os.ModePerm); err != nil {
-			return err
-		}
-
-		outFile, err := os.OpenFile(fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-		if err != nil {
-			return err
-		}
-
-		rc, err := f.Open()
-		if err != nil {
-			outFile.Close()
-			return err
-		}
-
-		_, err = io.Copy(outFile, rc)
-
-		outFile.Close()
-		rc.Close()
-
-		if err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
