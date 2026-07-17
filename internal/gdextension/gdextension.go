@@ -161,6 +161,7 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 	// all files are in place, try to build
 	androidNDKHome := os.Getenv("ANDROID_NDK_HOME")
 	emsdkHome := os.Getenv("EMSDK")
+	osxcrossTarget := os.Getenv("OSXCROSS_TARGET")
 
 	switch platform {
 	case "web":
@@ -173,6 +174,14 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 			return errors.New("ANDROID_NDK_HOME environment variable is not set. Please install Android NDK and set ANDROID_NDK_HOME to its root directory")
 		}
 		gde.logger.Info("using system ANDROID_NDK_HOME", "path", androidNDKHome)
+	default:
+		if strings.HasPrefix(platform, "macos") {
+			if osxcrossTarget == "" {
+				return errors.New("OSXCROSS_TARGET is not set. " +
+					"Point it to the OSXCross target/ directory, or use the mbround18/setup-osxcross action")
+			}
+			gde.logger.Info("using OSXCROSS_TARGET", "path", osxcrossTarget)
+		}
 	}
 
 	buildCmd := exec.Command("make", targetName)
@@ -197,6 +206,9 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 		emscriptenBin := filepath.Join(emsdkHome, "upstream", "emscripten")
 		currentPath := os.Getenv("PATH")
 		buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("PATH=%s%c%s", emscriptenBin, os.PathListSeparator, currentPath))
+	}
+	if osxcrossTarget != "" {
+		buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("OSXCROSS_TARGET=%s", osxcrossTarget))
 	}
 	buildCmd.Dir = buildDir
 	buildCmd.Stdout = stdout

@@ -31,6 +31,16 @@ linux.arm64.double.debug = "./dist/lib{{ .GDExtensionName }}.linux.template_debu
 linux.arm64.single.release = "./dist/lib{{ .GDExtensionName }}.linux.template_release.arm64.so"
 linux.arm64.double.release = "./dist/lib{{ .GDExtensionName }}.linux.template_release.arm64.double.so"
 
+macos.x86_64.single.debug = "./dist/lib{{ .GDExtensionName }}.macos.template_debug.x86_64.dylib"
+macos.x86_64.double.debug = "./dist/lib{{ .GDExtensionName }}.macos.template_debug.x86_64.double.dylib"
+macos.x86_64.single.release = "./dist/lib{{ .GDExtensionName }}.macos.template_release.x86_64.dylib"
+macos.x86_64.double.release = "./dist/lib{{ .GDExtensionName }}.macos.template_release.x86_64.double.dylib"
+
+macos.arm64.single.debug = "./dist/lib{{ .GDExtensionName }}.macos.template_debug.arm64.dylib"
+macos.arm64.double.debug = "./dist/lib{{ .GDExtensionName }}.macos.template_debug.arm64.double.dylib"
+macos.arm64.single.release = "./dist/lib{{ .GDExtensionName }}.macos.template_release.arm64.dylib"
+macos.arm64.double.release = "./dist/lib{{ .GDExtensionName }}.macos.template_release.arm64.double.dylib"
+
 android.x86_64.single.debug = "./dist/lib{{ .GDExtensionName }}.android.template_debug.x86_64.so"
 android.x86_64.single.debug.nothreads = "./dist/lib{{ .GDExtensionName }}.android.template_debug.x86_64.nothreads.so"
 android.x86_64.double.debug = "./dist/lib{{ .GDExtensionName }}.android.template_debug.x86_64.double.so"

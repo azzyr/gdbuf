@@ -1,4 +1,4 @@
-.PHONY: build-linux build-windows build-web build-android deps-update
+.PHONY: build-linux build-windows build-macos build-web build-android deps-update
 CMAKE ?= cmake
 
 # Linux
@@ -55,6 +55,58 @@ build-windows-release-double:
 	$(CMAKE) --build build/windows/release_double
 	mkdir -p build/windows/bin
 	cp build/windows/release_double/bin/* build/windows/bin/
+
+# macOS
+build-macos-x86_64: build-macos-x86_64-debug-single build-macos-x86_64-release-single
+build-macos-arm64:  build-macos-arm64-debug-single  build-macos-arm64-release-single
+
+build-macos-x86_64-debug-single:
+	$(CMAKE) -B build/macos-x86_64/debug_single -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-macos.toolchain.cmake -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=single
+	$(CMAKE) --build build/macos-x86_64/debug_single
+	mkdir -p build/macos-x86_64/bin
+	cp build/macos-x86_64/debug_single/bin/* build/macos-x86_64/bin/
+
+build-macos-x86_64-release-single:
+	$(CMAKE) -B build/macos-x86_64/release_single -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-macos.toolchain.cmake -DGODOTCPP_TARGET=template_release -DGODOTCPP_PRECISION=single
+	$(CMAKE) --build build/macos-x86_64/release_single
+	mkdir -p build/macos-x86_64/bin
+	cp build/macos-x86_64/release_single/bin/* build/macos-x86_64/bin/
+
+build-macos-x86_64-debug-double:
+	$(CMAKE) -B build/macos-x86_64/debug_double -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-macos.toolchain.cmake -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=double
+	$(CMAKE) --build build/macos-x86_64/debug_double
+	mkdir -p build/macos-x86_64/bin
+	cp build/macos-x86_64/debug_double/bin/* build/macos-x86_64/bin/
+
+build-macos-x86_64-release-double:
+	$(CMAKE) -B build/macos-x86_64/release_double -DCMAKE_TOOLCHAIN_FILE=cmake/x86_64-macos.toolchain.cmake -DGODOTCPP_TARGET=template_release -DGODOTCPP_PRECISION=double
+	$(CMAKE) --build build/macos-x86_64/release_double
+	mkdir -p build/macos-x86_64/bin
+	cp build/macos-x86_64/release_double/bin/* build/macos-x86_64/bin/
+
+build-macos-arm64-debug-single:
+	$(CMAKE) -B build/macos-arm64/debug_single -DCMAKE_TOOLCHAIN_FILE=cmake/arm64-macos.toolchain.cmake -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=single
+	$(CMAKE) --build build/macos-arm64/debug_single
+	mkdir -p build/macos-arm64/bin
+	cp build/macos-arm64/debug_single/bin/* build/macos-arm64/bin/
+
+build-macos-arm64-release-single:
+	$(CMAKE) -B build/macos-arm64/release_single -DCMAKE_TOOLCHAIN_FILE=cmake/arm64-macos.toolchain.cmake -DGODOTCPP_TARGET=template_release -DGODOTCPP_PRECISION=single
+	$(CMAKE) --build build/macos-arm64/release_single
+	mkdir -p build/macos-arm64/bin
+	cp build/macos-arm64/release_single/bin/* build/macos-arm64/bin/
+
+build-macos-arm64-debug-double:
+	$(CMAKE) -B build/macos-arm64/debug_double -DCMAKE_TOOLCHAIN_FILE=cmake/arm64-macos.toolchain.cmake -DGODOTCPP_TARGET=template_debug -DGODOTCPP_PRECISION=double
+	$(CMAKE) --build build/macos-arm64/debug_double
+	mkdir -p build/macos-arm64/bin
+	cp build/macos-arm64/debug_double/bin/* build/macos-arm64/bin/
+
+build-macos-arm64-release-double:
+	$(CMAKE) -B build/macos-arm64/release_double -DCMAKE_TOOLCHAIN_FILE=cmake/arm64-macos.toolchain.cmake -DGODOTCPP_TARGET=template_release -DGODOTCPP_PRECISION=double
+	$(CMAKE) --build build/macos-arm64/release_double
+	mkdir -p build/macos-arm64/bin
+	cp build/macos-arm64/release_double/bin/* build/macos-arm64/bin/
 
 # Web
 build-web: build-web-debug-single build-web-release-single build-web-debug-single-nothreads build-web-release-single-nothreads

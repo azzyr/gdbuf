@@ -41,7 +41,7 @@ func main() {
 	extensionNamePtr := flag.String("name", "gdbufgen", "name of the generated gdextension")
 	extensionArtifactOutputDirPtr := flag.String("out", "./out", "output directory location of the generated gdextension")
 	generateOnlyPtr := flag.Bool("generate-only", false, "only generate c++ code, do not compile gdextension")
-	platformPtr := flag.String("platform", "", "target platform (linux, windows, web, android)")
+	platformPtr := flag.String("platform", "", "target platform (linux, windows, macos-x86_64, macos-arm64, web, android)")
 	cacheDirPtr := flag.String("cache", "", "cache directory for build artifacts (default: system cache)")
 	versionPtr := flag.Bool("version", false, "print version information and exit")
 
@@ -144,7 +144,7 @@ func main() {
 
 	platforms := []string{*platformPtr}
 	if *platformPtr == "all" {
-		platforms = []string{"linux", "windows", "web", "android"}
+		platforms = []string{"linux", "windows", "macos-x86_64", "macos-arm64", "web", "android"}
 	} else if strings.Contains(*platformPtr, ",") {
 		platforms = strings.Split(*platformPtr, ",")
 	}
