@@ -90,7 +90,7 @@ func (gde *GDExtensionBuilder) ExtractNanopbGenerator(dst string) error {
 	return nil
 }
 
-func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform string, targetName string, generateOnly bool, stdout, stderr io.Writer) error {
+func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform string, isDebug, isDouble, isThreaded, generateOnly bool, stdout, stderr io.Writer) error {
 	// Determine build directory: custom cache or UserCacheDir/gdbuf
 	var buildDir string
 	var userCacheDir string
@@ -158,58 +158,45 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 		return nil
 	}
 
-	// all files are in place, try to build
-	androidNDKHome := os.Getenv("ANDROID_NDK_HOME")
-	emsdkHome := os.Getenv("EMSDK")
-	osxcrossTarget := os.Getenv("OSXCROSS_TARGET")
-
-	switch platform {
-	case "web":
-		if emsdkHome == "" {
-			return errors.New("EMSDK environment variable is not set. Please install Emscripten SDK and set EMSDK to its root directory")
-		}
-		gde.logger.Info("using system EMSDK", "path", emsdkHome)
-	case "android":
-		if androidNDKHome == "" {
-			return errors.New("ANDROID_NDK_HOME environment variable is not set. Please install Android NDK and set ANDROID_NDK_HOME to its root directory")
-		}
-		gde.logger.Info("using system ANDROID_NDK_HOME", "path", androidNDKHome)
-	default:
-		if strings.HasPrefix(platform, "macos") {
-			if osxcrossTarget == "" {
-				return errors.New("OSXCROSS_TARGET is not set. " +
-					"Point it to the OSXCross target/ directory, or use the mbround18/setup-osxcross action")
-			}
-			gde.logger.Info("using OSXCROSS_TARGET", "path", osxcrossTarget)
-		}
+	// Parse platform and optional arch (e.g. "macos-arm64")
+	sconsPlatform := platform
+	sconsArch := ""
+	if idx := strings.Index(platform, "-"); idx != -1 {
+		sconsPlatform = platform[:idx]
+		sconsArch = platform[idx+1:]
 	}
 
-	buildCmd := exec.Command("make", targetName)
+	// all files are in place, try to build
+	buildCmd := exec.Command("scons")
 
 	buildCmd.Env = os.Environ()
-	buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("WORKSPACE=%s", buildDir))
-	cmakeBin := os.Getenv("CMAKE")
-	if cmakeBin == "" {
-		cmakeBin, err = exec.LookPath("cmake")
-		if err != nil {
-			return fmt.Errorf("could not locate cmake executable in PATH: %w", err)
+	
+	// Add arguments
+	buildCmd.Args = append(buildCmd.Args, fmt.Sprintf("platform=%s", sconsPlatform))
+	if sconsArch != "" {
+		buildCmd.Args = append(buildCmd.Args, fmt.Sprintf("arch=%s", sconsArch))
+	}
+	
+	if isDebug {
+		buildCmd.Args = append(buildCmd.Args, "target=template_debug")
+	} else {
+		buildCmd.Args = append(buildCmd.Args, "target=template_release")
+	}
+
+	if isDouble {
+		buildCmd.Args = append(buildCmd.Args, "precision=double")
+	} else {
+		buildCmd.Args = append(buildCmd.Args, "precision=single")
+	}
+
+	if sconsPlatform == "web" {
+		if !isThreaded {
+			buildCmd.Args = append(buildCmd.Args, "threads=no")
+		} else {
+			buildCmd.Args = append(buildCmd.Args, "threads=yes")
 		}
 	}
-	buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("CMAKE=%s", cmakeBin))
-	if androidNDKHome != "" {
-		buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("ANDROID_NDK_HOME=%s", androidNDKHome))
-	}
-	if emsdkHome != "" {
-		buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("EMSDK=%s", emsdkHome))
-		// Add emscripten to PATH
-		// The path structure is usually emsdk/upstream/emscripten
-		emscriptenBin := filepath.Join(emsdkHome, "upstream", "emscripten")
-		currentPath := os.Getenv("PATH")
-		buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("PATH=%s%c%s", emscriptenBin, os.PathListSeparator, currentPath))
-	}
-	if osxcrossTarget != "" {
-		buildCmd.Env = append(buildCmd.Env, fmt.Sprintf("OSXCROSS_TARGET=%s", osxcrossTarget))
-	}
+
 	buildCmd.Dir = buildDir
 	buildCmd.Stdout = stdout
 	buildCmd.Stderr = stderr
@@ -222,7 +209,7 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 	gde.logger.Info("build successful")
 
 	fmt.Fprintln(stdout, "Copying binaries to intermediate location...")
-	if err = copyFS(os.DirFS(filepath.Join(buildDir, "build", platform, "bin")), filepath.Join(buildDir, "out", "dist"), stdout); err != nil {
+	if err = copyFS(os.DirFS(filepath.Join(buildDir, "bin")), filepath.Join(buildDir, "out", "dist"), stdout); err != nil {
 		return fmt.Errorf("could not copy build output to output directory: %w", err)
 	}
 

@@ -1,0 +1,23 @@
+#!/usr/bin/env python
+import os
+import sys
+
+env = SConscript("godot-cpp/SConstruct")
+
+env.Append(CPPPATH=["src", "nanopb"])
+env.Append(CPPDEFINES=["PB_ENABLE_MALLOC"])
+{{- range .ProtoData.Files }}
+env.Append(CPPPATH=["src/{{ dir .ProtoPath }}"])
+{{- end }}
+
+if env["platform"] == "macos" and env["target"] == "template_debug":
+    pass
+
+sources = Glob("src/*.cpp") + Glob("src/*.cc") + Glob("src/*.c")
+sources += ["nanopb/pb_common.c", "nanopb/pb_encode.c", "nanopb/pb_decode.c"]
+
+library = env.SharedLibrary(
+    "bin/{{ .GDExtensionName }}{}".format(env["suffix"]), source=sources
+)
+
+Default(library)

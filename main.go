@@ -161,28 +161,10 @@ func main() {
 
 	if len(validPlatforms) > 0 {
 		for _, platform := range validPlatforms {
-			targetName := "build-" + platform
-
-			if *debugPtr {
-				targetName += "-debug"
-			} else {
-				targetName += "-release"
-			}
-
-			if *doublePtr {
-				targetName += "-double"
-			} else {
-				targetName += "-single"
-			}
-
-			if platform == "web" && !*threadedPtr {
-				targetName += "-nothreads"
-			}
-
-			logger.Info("building gdextension", "platform", platform, "target", targetName)
-			err = gdExtensionBuilder.Build(*cppOutputDirPtr, *extensionArtifactOutputDirPtr, platform, targetName, *generateOnlyPtr, os.Stdout, os.Stderr)
+			logger.Info("building gdextension", "platform", platform)
+			err = gdExtensionBuilder.Build(*cppOutputDirPtr, *extensionArtifactOutputDirPtr, platform, *debugPtr, *doublePtr, *threadedPtr, *generateOnlyPtr, os.Stdout, os.Stderr)
 			if err != nil {
-				logger.Error("problem building gdextension", "platform", platform, "target", targetName, "err", err)
+				logger.Error("problem building gdextension", "platform", platform, "err", err)
 				os.Exit(1)
 			}
 		}

@@ -10,8 +10,12 @@
       {
         "assets": [
           {
-            "path": "bin/gdbuf",
-            "label": "gdbuf"
+            "path": "bin/gdbuf-linux-amd64",
+            "label": "gdbuf-linux-amd64"
+          },
+          {
+            "path": "bin/gdbuf-darwin-arm64",
+            "label": "gdbuf-darwin-arm64"
           }
         ]
       }

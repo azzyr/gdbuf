@@ -33,7 +33,7 @@ jobs:
 
       - name: Build Go application
         run: |
-          make build
+          make build-all
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
