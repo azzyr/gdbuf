@@ -245,8 +245,8 @@ func (cg *CodeGenerator) GenerateCode(fileDescriptorSet []*descriptorpb.FileDesc
 		"register_types.cpp.tmpl":       "src/register_types.cpp",
 		"messages.h.tmpl":               "src/messages.h",
 		"messages.cpp.tmpl":             "src/messages.cpp",
-		"global_enums.h.tmpl":           "src/global_enums.h",
-		"global_enums.cpp.tmpl":         "src/global_enums.cpp",
+		"global_class.h.tmpl":           "src/global_class.h",
+		"global_class.cpp.tmpl":         "src/global_class.cpp",
 	}
 
 	for templateName, outputPath := range oneTimeTemplates {
@@ -285,17 +285,15 @@ func (cg *CodeGenerator) GenerateCode(fileDescriptorSet []*descriptorpb.FileDesc
 		}
 	}
 
-	// Generate documentation for GlobalEnums
-	if len(templateData.GlobalEnums) > 0 {
-		globalEnumsMsg := protoMessage{
-			ClassName:   cg.extensionName + "Enums",
-			Description: "Contains all top-level enums defined in proto files.",
-			Enums:       templateData.GlobalEnums,
-		}
-		outputPath := filepath.Join(cg.destinationDirectoryPath, "doc_classes", globalEnumsMsg.ClassName+".xml")
-		if err := cg.executeTemplate("class_doc.xml.tmpl", outputPath, globalEnumsMsg); err != nil {
-			return fmt.Errorf("could not execute template class_doc.xml.tmpl for global enums: %w", err)
-		}
+	// Generate documentation for the global extension class
+	globalClassMsg := protoMessage{
+		ClassName:   cg.extensionName,
+		Description: "Global extension class containing utilities and enums.",
+		Enums:       templateData.GlobalEnums,
+	}
+	outputPath := filepath.Join(cg.destinationDirectoryPath, "doc_classes", globalClassMsg.ClassName+".xml")
+	if err := cg.executeTemplate("class_doc.xml.tmpl", outputPath, globalClassMsg); err != nil {
+		return fmt.Errorf("could not execute template class_doc.xml.tmpl for global class: %w", err)
 	}
 
 	return nil

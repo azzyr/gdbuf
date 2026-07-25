@@ -3,7 +3,7 @@
 {{- $protoFilePathNoExtension := trimSuffix ".proto" .ProtoPath }}
 #include "{{ $protoFilePathNoExtension }}.h"
 {{- end }}
-#include "global_enums.h"
+#include "global_class.h"
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/godot.hpp>
@@ -14,9 +14,7 @@ void initialize_gdextension_types(ModuleInitializationLevel p_level){
   if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE)
     return;
 
-  {{- if .GlobalEnums }}
-  GDREGISTER_CLASS(gdbuf::{{ .GDExtensionName }}Enums);
-  {{- end }}
+  GDREGISTER_CLASS(gdbuf::{{ .GDExtensionName }});
 
   {{- range .ProtoData.Files }}
   {{- $protoPathNoExtension := trimSuffix ".proto" .ProtoPath }}

@@ -6,8 +6,8 @@
 
 namespace gdbuf {
 
-class {{ .GDExtensionName }}Enums : public godot::Object {
-    GDCLASS({{ .GDExtensionName }}Enums, godot::Object)
+class {{ .GDExtensionName }} : public godot::Object {
+    GDCLASS({{ .GDExtensionName }}, godot::Object)
 
 public:
     {{- range .GlobalEnums }}
@@ -25,5 +25,5 @@ protected:
 } // namespace gdbuf
 
 {{- range .GlobalEnums }}
-VARIANT_ENUM_CAST(gdbuf::{{ $.GDExtensionName }}Enums::{{ .EnumName }});
+VARIANT_ENUM_CAST(gdbuf::{{ $.GDExtensionName }}::{{ .EnumName }});
 {{- end }}

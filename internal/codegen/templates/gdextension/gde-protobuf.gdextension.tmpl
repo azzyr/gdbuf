@@ -4,9 +4,7 @@ entry_symbol = "gdextension_init"
 compatibility_minimum = "4.5"
 
 documentation_files = [
-{{- if .GlobalEnums }}
-    "./doc_classes/{{ .GDExtensionName }}Enums.xml",
-{{- end }}
+    "./doc_classes/{{ .GDExtensionName }}.xml",
 {{- range .ProtoData.Files }}
 {{- range .Messages }}
     "./doc_classes/{{ .ClassName }}.xml",

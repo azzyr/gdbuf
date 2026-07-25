@@ -132,8 +132,8 @@ func resolveGodotType(field *descriptorpb.FieldDescriptorProto, currentProtoPath
 		}
 
 		if globalEnumsMap[fullTypeName] {
-			godotType = fmt.Sprintf("gdbuf::%sEnums::%s", extensionName, enumName)
-			godotClassName = fmt.Sprintf("%sEnums.%s", extensionName, enumName)
+			godotType = fmt.Sprintf("gdbuf::%s::%s", extensionName, enumName)
+			godotClassName = fmt.Sprintf("%s.%s", extensionName, enumName)
 		} else {
 			godotType = "int32_t" // Bind nested enums as int
 			godotClassName = "int"
