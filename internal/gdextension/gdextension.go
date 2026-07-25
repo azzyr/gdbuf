@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 )
 
@@ -172,6 +174,7 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 	buildCmd.Env = os.Environ()
 	
 	// Add arguments
+	buildCmd.Args = append(buildCmd.Args, fmt.Sprintf("-j %d", runtime.NumCPU()))
 	buildCmd.Args = append(buildCmd.Args, fmt.Sprintf("platform=%s", sconsPlatform))
 	if sconsArch != "" {
 		buildCmd.Args = append(buildCmd.Args, fmt.Sprintf("arch=%s", sconsArch))
@@ -269,19 +272,35 @@ func copyFS(src fs.FS, dst string, logWriter io.Writer, excludePrefixes ...strin
 			return os.MkdirAll(dstPath, 0755)
 		}
 
-		if logWriter != nil {
-			// Throttle log output for file copies to prevent flooding the TUI
-			fileCount++
-			if fileCount%10 == 0 {
-				fmt.Fprintln(logWriter, "Copying "+path)
-			}
-		}
-
 		srcFile, err := src.Open(path)
 		if err != nil {
 			return err
 		}
 		defer srcFile.Close()
+
+		// Read source contents to compare
+		srcData, err := io.ReadAll(srcFile)
+		if err != nil {
+			return err
+		}
+
+		// Smart copy: only overwrite if contents differ to preserve timestamps
+		if dstInfo, err := os.Stat(dstPath); err == nil && !dstInfo.IsDir() {
+			if dstInfo.Size() == int64(len(srcData)) {
+				dstData, err := os.ReadFile(dstPath)
+				if err == nil && slices.Equal(srcData, dstData) {
+					return nil // Skip copy, contents are identical
+				}
+			}
+		}
+
+		// Throttle log output for file copies to prevent flooding the TUI
+		if logWriter != nil {
+			fileCount++
+			if fileCount%10 == 0 {
+				fmt.Fprintln(logWriter, "Copying "+path)
+			}
+		}
 
 		dstFile, err := os.Create(dstPath)
 		if err != nil {
@@ -289,7 +308,7 @@ func copyFS(src fs.FS, dst string, logWriter io.Writer, excludePrefixes ...strin
 		}
 		defer dstFile.Close()
 
-		_, err = io.Copy(dstFile, srcFile)
+		_, err = dstFile.Write(srcData)
 		return err
 	})
 }
