@@ -2,6 +2,7 @@
 import os
 import sys
 
+ARGUMENTS.setdefault("build_profile", "build_profile.json")
 env = SConscript("godot-cpp/SConstruct")
 
 env.Append(CPPPATH=["src", "nanopb"])
