@@ -348,6 +348,18 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 		}
 	}
 
+	globalEnumsMap := make(map[string]bool)
+	for _, file := range fileDescriptorSet {
+		pkg := file.GetPackage()
+		prefix := "."
+		if pkg != "" {
+			prefix = "." + pkg + "."
+		}
+		for _, enum := range file.GetEnumType() {
+			globalEnumsMap[prefix+enum.GetName()] = true
+		}
+	}
+
 	// now for the real deal
 	for _, file := range fileDescriptorSet {
 		var protoFile protoFile
@@ -440,7 +452,7 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 						protoMessageField.Description += "Note: This field is a Google Protobuf Struct. In Godot, it is represented as a Dictionary."
 					}
 
-					godotType, godotClassName, isCustom, isEnum, srcFile, err := resolveGodotType(field, protoFile.ProtoPath, protoFileToDeclaredMessageNames, protoFileToDeclaredEnumNames, allMessageDescriptors, typeToGodotName)
+					godotType, godotClassName, isCustom, isEnum, srcFile, err := resolveGodotType(field, protoFile.ProtoPath, protoFileToDeclaredMessageNames, protoFileToDeclaredEnumNames, allMessageDescriptors, typeToGodotName, globalEnumsMap, cg.extensionName)
 					if err != nil {
 						return fmt.Errorf("could not resolve godot type: %w", err)
 					}
@@ -488,11 +500,11 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 								valueField = f
 							}
 						}
-						keyType, _, _, _, _, err := resolveGodotType(keyField, protoFile.ProtoPath, protoFileToDeclaredMessageNames, protoFileToDeclaredEnumNames, allMessageDescriptors, typeToGodotName)
+						keyType, _, _, _, _, err := resolveGodotType(keyField, protoFile.ProtoPath, protoFileToDeclaredMessageNames, protoFileToDeclaredEnumNames, allMessageDescriptors, typeToGodotName, globalEnumsMap, cg.extensionName)
 						if err != nil {
 							return fmt.Errorf("could not resolve map key type: %w", err)
 						}
-						valType, _, valCustom, _, _, err := resolveGodotType(valueField, protoFile.ProtoPath, protoFileToDeclaredMessageNames, protoFileToDeclaredEnumNames, allMessageDescriptors, typeToGodotName)
+						valType, _, valCustom, _, _, err := resolveGodotType(valueField, protoFile.ProtoPath, protoFileToDeclaredMessageNames, protoFileToDeclaredEnumNames, allMessageDescriptors, typeToGodotName, globalEnumsMap, cg.extensionName)
 						if err != nil {
 							return fmt.Errorf("could not resolve map value type: %w", err)
 						}

@@ -46,7 +46,7 @@ var wktMap = map[string]godotTypeInfo{
 	"FieldMask":   {"godot::PackedStringArray", "PackedStringArray"},
 }
 
-func resolveGodotType(field *descriptorpb.FieldDescriptorProto, currentProtoPath string, fileToMsgs map[string][]string, fileToEnum map[string][]string, allMessageDescriptors map[string]*descriptorpb.DescriptorProto, typeToGodotName map[string]string) (godotType string, godotClassName string, isCustom bool, isEnum bool, srcFile string, err error) {
+func resolveGodotType(field *descriptorpb.FieldDescriptorProto, currentProtoPath string, fileToMsgs map[string][]string, fileToEnum map[string][]string, allMessageDescriptors map[string]*descriptorpb.DescriptorProto, typeToGodotName map[string]string, globalEnumsMap map[string]bool, extensionName string) (godotType string, godotClassName string, isCustom bool, isEnum bool, srcFile string, err error) {
 	fieldType := *field.GetType().Enum()
 	fullTypeName := field.GetTypeName()
 
@@ -125,8 +125,19 @@ func resolveGodotType(field *descriptorpb.FieldDescriptorProto, currentProtoPath
 		}
 		isCustom = false
 		isEnum = true
-		godotType = "int32_t" // Bind as int to avoid Godot binding issues with C++ enums
-		godotClassName = "int"
+
+		enumName := fullTypeName
+		if lastDot := strings.LastIndex(fullTypeName, "."); lastDot != -1 {
+			enumName = fullTypeName[lastDot+1:]
+		}
+
+		if globalEnumsMap[fullTypeName] {
+			godotType = fmt.Sprintf("gdbuf::%sEnums::%s", extensionName, enumName)
+			godotClassName = fmt.Sprintf("%sEnums.%s", extensionName, enumName)
+		} else {
+			godotType = "int32_t" // Bind nested enums as int
+			godotClassName = "int"
+		}
 	default:
 		isCustom = false
 		var ok bool
