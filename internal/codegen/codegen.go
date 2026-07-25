@@ -577,6 +577,7 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 							}
 							protoMessageField.GodotClassName = "Array"
 							protoMessageField.IsCustomType = false
+							protoMessageField.IsEnum = false
 							cg.logger.Debug("Repeated field", "name", field.GetName(), "after", protoMessageField.IsCustomType)
 						}
 					}
