@@ -104,6 +104,7 @@ type protoMessageField struct {
 	Description         string
 	OneofName           string
 	Number              int32
+	EnumOptionsString   string
 }
 
 func NewCodeGenerator(logger *slog.Logger, destinationDirectoryPath, extensionName, protobufVersion string) (*CodeGenerator, error) {
@@ -300,6 +301,24 @@ func (cg *CodeGenerator) GenerateCode(fileDescriptorSet []*descriptorpb.FileDesc
 	return nil
 }
 
+func traverseEnums(enums []*descriptorpb.EnumDescriptorProto, currentPrefix string, globalEnumsOptionsMap map[string]string) {
+	for _, enum := range enums {
+		var options []string
+		for _, val := range enum.GetValue() {
+			options = append(options, val.GetName())
+		}
+		globalEnumsOptionsMap[currentPrefix+enum.GetName()] = strings.Join(options, ",")
+	}
+}
+
+func traverseNestedEnums(msgs []*descriptorpb.DescriptorProto, currentPrefix string, globalEnumsOptionsMap map[string]string) {
+	for _, msg := range msgs {
+		msgPrefix := currentPrefix + msg.GetName() + "."
+		traverseEnums(msg.GetEnumType(), msgPrefix, globalEnumsOptionsMap)
+		traverseNestedEnums(msg.GetNestedType(), msgPrefix, globalEnumsOptionsMap)
+	}
+}
+
 func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.FileDescriptorProto) (*protoData, error) {
 	var protoData protoData
 	// one loop through to get a mapping of filename and message name (recursive)
@@ -349,15 +368,22 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 	}
 
 	globalEnumsMap := make(map[string]bool)
+	globalEnumsOptionsMap := make(map[string]string)
+	
 	for _, file := range fileDescriptorSet {
 		pkg := file.GetPackage()
 		prefix := "."
 		if pkg != "" {
 			prefix = "." + pkg + "."
 		}
+		
+		// Global enums
 		for _, enum := range file.GetEnumType() {
 			globalEnumsMap[prefix+enum.GetName()] = true
 		}
+		
+		traverseEnums(file.GetEnumType(), prefix, globalEnumsOptionsMap)
+		traverseNestedEnums(file.GetMessageType(), prefix, globalEnumsOptionsMap)
 	}
 
 	// now for the real deal
@@ -484,6 +510,9 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 
 					protoMessageField.IsCustomType = isCustom
 					protoMessageField.IsEnum = isEnum
+					if isEnum {
+						protoMessageField.EnumOptionsString = globalEnumsOptionsMap[field.GetTypeName()]
+					}
 
 					protoMessageField.InnerGodotType = godotType
 					protoMessageField.InnerGodotClassName = godotClassName
