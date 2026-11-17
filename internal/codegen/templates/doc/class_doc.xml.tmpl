@@ -10,7 +10,7 @@
 	</tutorials>
 	<members>
         {{- range .Fields }}
-		<member name="{{ snakecase .FieldName }}" type="{{ godotDocType .GodotType .IsCustomType .IsEnum }}" setter="set_{{ snakecase .FieldName }}" getter="get_{{ snakecase .FieldName }}">{{ if .Description }}{{ .Description }}{{ else }}Proto description missing.{{ end }}</member>
+		<member name="{{ .Name }}" type="{{ .DocType }}" setter="set_{{ .Name }}" getter="get_{{ .Name }}">{{ if .Description }}{{ .Description }}{{ else }}Proto description missing.{{ end }}</member>
         {{- end }}
 	</members>
 </class>

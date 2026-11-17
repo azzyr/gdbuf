@@ -58,7 +58,7 @@ func main() {
 	}
 
 	var logHandler slog.Handler
-	logHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{ Level: slog.LevelDebug, } )
+	logHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
 
 	logger := slog.New(logHandler)
 
@@ -122,8 +122,9 @@ func main() {
 		logger.Error("could not compile proto cpp (nanopb)", "err", err)
 		os.Exit(1)
 	}
+	defer os.RemoveAll(compiledProtoCppTempDirPath)
 
-	codeGenerator, err := codegen.NewCodeGenerator(logger, *cppOutputDirPtr, *extensionNamePtr, protoc.GetVersion())
+	codeGenerator, err := codegen.NewCodeGenerator(logger, *cppOutputDirPtr, *extensionNamePtr)
 	if err != nil {
 		logger.Error("could not create new code generator", "err", err)
 		os.Exit(1)
