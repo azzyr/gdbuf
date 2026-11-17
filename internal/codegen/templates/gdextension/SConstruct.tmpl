@@ -11,8 +11,8 @@ env.Append(CPPDEFINES=["PB_ENABLE_MALLOC"])
 env.Append(CPPPATH=["src/{{ dir .ProtoPath }}"])
 {{- end }}
 
-if env["platform"] == "macos" and env["target"] == "template_debug":
-    pass
+if env["platform"] == "web":
+    env.Append(CCFLAGS=["-include", "stdlib.h"])
 
 sources = Glob("src/*.cpp") + Glob("src/*.cc") + Glob("src/*.c")
 sources += ["nanopb/pb_common.c", "nanopb/pb_encode.c", "nanopb/pb_decode.c"]
