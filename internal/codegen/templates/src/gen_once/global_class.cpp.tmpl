@@ -8,7 +8,7 @@ void {{ .GDExtensionName }}::_bind_methods() {
     {{- range .GlobalEnums }}
     {{- $enumName := .EnumName }}
     {{- range .Options }}
-    godot::ClassDB::bind_integer_constant("{{ $.GDExtensionName }}", "{{ $enumName }}", "{{ . }}", {{ . }});
+    godot::ClassDB::bind_integer_constant("{{ $.GDExtensionName }}", "{{ $enumName }}", "{{ .Name }}", {{ .Name }});
     {{- end }}
     {{- end }}
 }

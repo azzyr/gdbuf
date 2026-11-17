@@ -13,7 +13,7 @@ public:
     {{- range .GlobalEnums }}
     enum {{ .EnumName }} {
         {{- range .Options }}
-        {{ . }},
+        {{ .Name }} = {{ .Number }},
         {{- end }}
     };
     {{- end }}

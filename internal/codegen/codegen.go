@@ -11,7 +11,6 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
-	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
@@ -82,7 +81,20 @@ type protoOneofField struct {
 
 type protoEnum struct {
 	EnumName string
-	Options  []string
+	Options  []protoEnumValue
+}
+
+type protoEnumValue struct {
+	Name   string
+	Number int32
+}
+
+func enumValues(enum *descriptorpb.EnumDescriptorProto) []protoEnumValue {
+	var values []protoEnumValue
+	for _, val := range enum.GetValue() {
+		values = append(values, protoEnumValue{Name: val.GetName(), Number: val.GetNumber()})
+	}
+	return values
 }
 
 type protoMessageField struct {
@@ -303,7 +315,8 @@ func traverseEnums(enums []*descriptorpb.EnumDescriptorProto, currentPrefix stri
 	for _, enum := range enums {
 		var options []string
 		for _, val := range enum.GetValue() {
-			options = append(options, val.GetName())
+			// Godot's PROPERTY_HINT_ENUM takes "NAME:value"; without the value it numbers by index
+			options = append(options, fmt.Sprintf("%s:%d", val.GetName(), val.GetNumber()))
 		}
 		globalEnumsOptionsMap[currentPrefix+enum.GetName()] = strings.Join(options, ",")
 	}
@@ -400,10 +413,7 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 		for _, enum := range file.GetEnumType() {
 			var protoEnum protoEnum
 			protoEnum.EnumName = enum.GetName()
-			enum.GetOptions().ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
-				protoEnum.Options = append(protoEnum.Options, fd.TextName())
-				return true
-			})
+			protoEnum.Options = enumValues(enum)
 			protoFile.Enums = append(protoFile.Enums, protoEnum)
 		}
 
@@ -636,16 +646,7 @@ func (cg *CodeGenerator) extractGlobalEnums(fileDescriptorSet []*descriptorpb.Fi
 		for _, enum := range file.GetEnumType() {
 			var protoEnum protoEnum
 			protoEnum.EnumName = enum.GetName()
-			enum.GetOptions().ProtoReflect().Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
-				protoEnum.Options = append(protoEnum.Options, fd.TextName())
-				return true
-			})
-			// Manual extraction of enum values because the above reflection might not get the values themselves easily if we just want names
-			// Actually, we need the values from the descriptor
-			protoEnum.Options = nil // Reset
-			for _, val := range enum.GetValue() {
-				protoEnum.Options = append(protoEnum.Options, val.GetName())
-			}
+			protoEnum.Options = enumValues(enum)
 			globalEnums = append(globalEnums, protoEnum)
 		}
 	}
