@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 
@@ -17,24 +16,25 @@ import (
 )
 
 type ProtoCompiler struct {
-	logger          *slog.Logger
-	protobufVersion string
+	logger *slog.Logger
 }
 
 func NewProtoCompiler(logger *slog.Logger) (*ProtoCompiler, error) {
-	version, err := getProtocExecutableVersion()
+	version, err := exec.Command("protoc", "--version").Output()
 	if err != nil {
-		return nil, fmt.Errorf("could not get protoc executable version information: %w", err)
+		return nil, fmt.Errorf("could not run protoc: %w", err)
 	}
-	logger.Debug("got protobuf version", "version", version)
-	return &ProtoCompiler{
-		logger:          logger,
-		protobufVersion: version,
-	}, nil
+	logger.Debug("found protoc", "version", strings.TrimSpace(string(version)))
+	return &ProtoCompiler{logger: logger}, nil
 }
 
-func (c *ProtoCompiler) GetVersion() string {
-	return c.protobufVersion
+// includeArgs puts the proto directory first so --include adds paths instead of replacing it.
+func includeArgs(protoFilesDirPath string, includeDirs []string) []string {
+	args := []string{"-I", protoFilesDirPath}
+	for _, dir := range includeDirs {
+		args = append(args, "-I", dir)
+	}
+	return args
 }
 
 func (c *ProtoCompiler) BuildDescriptorSet(protoFilesDirPath string, includeDirs []string) ([]*descriptorpb.FileDescriptorProto, error) {
@@ -45,20 +45,14 @@ func (c *ProtoCompiler) BuildDescriptorSet(protoFilesDirPath string, includeDirs
 		return descriptorSet, fmt.Errorf("could not get proto files from %s: %w", protoFilesDirPath, err)
 	}
 
-	tmpDir := os.TempDir()
-	protoDescriptorPath := filepath.Join(tmpDir, "gdbuf.desc.binpb")
-	args := []string{fmt.Sprintf("--descriptor_set_out=%s", protoDescriptorPath)}
-	args = append(args, "--include_source_info")
-
-	if len(includeDirs) > 0 {
-		for _, dir := range includeDirs {
-			args = append(args, "-I", dir)
-		}
-	} else {
-		args = append(args, "-I", protoFilesDirPath)
+	tmpDir, err := os.MkdirTemp("", "gdbuf-desc-")
+	if err != nil {
+		return descriptorSet, fmt.Errorf("could not make temp directory for descriptor set: %w", err)
 	}
-
-	// Actually, well-known types might be needed. protoc usually finds them if installed.
+	defer os.RemoveAll(tmpDir)
+	protoDescriptorPath := filepath.Join(tmpDir, "gdbuf.desc.binpb")
+	args := []string{fmt.Sprintf("--descriptor_set_out=%s", protoDescriptorPath), "--include_source_info"}
+	args = append(args, includeArgs(protoFilesDirPath, includeDirs)...)
 	args = append(args, protoFilePaths...)
 	buildProtoDescriptorCmd := exec.Command("protoc", args...)
 
@@ -114,14 +108,7 @@ func (c *ProtoCompiler) CompileNanopb(protoFilesDirPath string, includeDirs []st
 		fmt.Sprintf("--nanopb_out=%s", tempProtocBuildDir),
 	}
 
-	if len(includeDirs) > 0 {
-		for _, dir := range includeDirs {
-			args = append(args, "-I", dir)
-		}
-	} else {
-		args = append(args, "-I", protoFilesDirPath)
-	}
-
+	args = append(args, includeArgs(protoFilesDirPath, includeDirs)...)
 	args = append(args, protoFilePaths...)
 
 	// Add Well-Known Types (WKTs) to ensure they are compiled with Nanopb
@@ -147,24 +134,6 @@ func (c *ProtoCompiler) CompileNanopb(protoFilesDirPath string, includeDirs []st
 	}
 
 	return tempProtocBuildDir, nil
-}
-
-func getProtocExecutableVersion() (string, error) {
-	protoVersionCmdOut, err := exec.Command("protoc", "--version").Output()
-	if err != nil {
-		return "", fmt.Errorf("could not build proto description file: %w", err)
-	}
-
-	// Output format: "libprotoc 25.1" or similar
-	re := regexp.MustCompile(`libprotoc (\d+\.\d+)`)
-	matches := re.FindStringSubmatch(string(protoVersionCmdOut))
-	if len(matches) < 2 {
-		return "", fmt.Errorf("could not parse protoc version from output: %s", string(protoVersionCmdOut))
-	}
-
-	versionParts := strings.Split(matches[1], ".")
-	protoVersion := fmt.Sprintf("%s.%s.5", versionParts[1], versionParts[0]) // TODO: dont hardcode last part of version
-	return protoVersion, nil
 }
 
 func getProtoFilesInDir(protoFilesDirPath string) ([]string, error) {

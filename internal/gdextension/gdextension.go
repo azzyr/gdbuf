@@ -172,14 +172,14 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 	buildCmd := exec.Command("scons")
 
 	buildCmd.Env = os.Environ()
-	
+
 	// Add arguments
 	buildCmd.Args = append(buildCmd.Args, fmt.Sprintf("-j %d", runtime.NumCPU()))
 	buildCmd.Args = append(buildCmd.Args, fmt.Sprintf("platform=%s", sconsPlatform))
 	if sconsArch != "" {
 		buildCmd.Args = append(buildCmd.Args, fmt.Sprintf("arch=%s", sconsArch))
 	}
-	
+
 	if isDebug {
 		buildCmd.Args = append(buildCmd.Args, "target=template_debug")
 	} else {

@@ -2,13 +2,15 @@
 #include "global_class.h"
 #include "godot_cpp/core/class_db.hpp"
 
-namespace gdbuf {
+namespace gdbuf
+{
 
-void {{ .GDExtensionName }}::_bind_methods() {
+void {{ .GDExtensionName }}::_bind_methods()
+{
     {{- range .GlobalEnums }}
     {{- $enumName := .EnumName }}
     {{- range .Options }}
-    godot::ClassDB::bind_integer_constant("{{ $.GDExtensionName }}", "{{ $enumName }}", "{{ .Name }}", {{ .Name }});
+    godot::ClassDB::bind_integer_constant( "{{ $.GDExtensionName }}", "{{ $enumName }}", "{{ .Name }}", {{ .Name }} );
     {{- end }}
     {{- end }}
 }

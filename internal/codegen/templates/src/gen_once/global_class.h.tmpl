@@ -4,14 +4,17 @@
 #include "godot_cpp/classes/object.hpp"
 #include "godot_cpp/core/class_db.hpp"
 
-namespace gdbuf {
+namespace gdbuf
+{
 
-class {{ .GDExtensionName }} : public godot::Object {
-    GDCLASS({{ .GDExtensionName }}, godot::Object)
+class {{ .GDExtensionName }} : public godot::Object
+{
+    GDCLASS( {{ .GDExtensionName }}, godot::Object )
 
 public:
     {{- range .GlobalEnums }}
-    enum {{ .EnumName }} {
+    enum {{ .EnumName }}
+    {
         {{- range .Options }}
         {{ .Name }} = {{ .Number }},
         {{- end }}
@@ -25,5 +28,5 @@ protected:
 } // namespace gdbuf
 
 {{- range .GlobalEnums }}
-VARIANT_ENUM_CAST(gdbuf::{{ $.GDExtensionName }}::{{ .EnumName }});
+VARIANT_ENUM_CAST( gdbuf::{{ $.GDExtensionName }}::{{ .EnumName }} );
 {{- end }}

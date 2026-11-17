@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
 	"text/template"
 
-	"github.com/Masterminds/sprig/v3"
+	"github.com/huandu/xstrings"
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
@@ -32,12 +33,10 @@ type CodeGenerator struct {
 	destinationDirectoryPath string
 	templates                *template.Template
 	extensionName            string
-	protobufVersion          string
 }
 
 type templateData struct {
 	GDExtensionName string
-	ProtobufVersion string
 	ProtoData       protoData
 	GlobalEnums     []protoEnum
 }
@@ -47,10 +46,13 @@ type protoData struct {
 }
 
 type protoFile struct {
-	ProtoPath    string // original path of the proto file in the proto module that was injested
+	ProtoPath    string
+	PathNoExt    string
+	BaseName     string
+	Dir          string
+	Namespace    string
 	PackageName  string
 	Messages     []protoMessage
-	Enums        []protoEnum
 	Dependencies []string
 	ForwardDecls []ForwardDecl
 }
@@ -63,20 +65,18 @@ type ForwardDecl struct {
 type protoMessage struct {
 	ClassName   string
 	MessageName string
+	StructName  string
 	Description string
 	Fields      []protoMessageField
 	Oneofs      []protoOneof
-	Enums       []protoEnum
 }
 
 type protoOneof struct {
-	Name   string
-	Fields []protoMessageField
-}
-
-type protoOneofField struct {
-	Name   string
-	Number int32
+	Name     string
+	Member   string
+	EnumType string
+	NotSet   string
+	Fields   []protoMessageField
 }
 
 type protoEnum struct {
@@ -110,25 +110,58 @@ type protoMessageField struct {
 	IsEnum              bool
 	IsMap               bool
 	IsTypedArray        bool
-	MapKeyGodotType     string
-	MapValueGodotType   string
-	MapValueIsCustom    bool
 	Description         string
 	OneofName           string
 	Number              int32
 	EnumOptionsString   string
+
+	// set by finishField
+	Name        string
+	CppType     string
+	VariantType string
+	Hint        string
+	HintString  string
+	DocType     string
+	CaseConst   string
+	Tag         string
+	OneofMember string
+	OneofNotSet string
 }
 
-func NewCodeGenerator(logger *slog.Logger, destinationDirectoryPath, extensionName, protobufVersion string) (*CodeGenerator, error) {
-	tmpl, err := template.New("gdbuf").Funcs(getTemplateFuncMap()).ParseFS(templatesFS, "templates/**/*.tmpl", "templates/**/**/*.tmpl")
-	if err != nil {
-		return nil, fmt.Errorf("could not parse code generation file templates: %w", err)
+func finishField(f *protoMessageField, msg *protoMessage, oneof *protoOneof) {
+	f.Name = xstrings.ToSnakeCase(f.FieldName)
+	f.CppType = f.GodotType
+	if f.IsCustomType {
+		f.CppType = fmt.Sprintf("godot::Ref<%s>", f.GodotType)
+	}
+	f.VariantType = godotVariantType(f.GodotType, f.IsCustomType, f.IsEnum)
+	f.DocType = godotDocType(f.GodotType, f.IsCustomType, f.IsEnum)
+
+	f.Hint, f.HintString = "godot::PROPERTY_HINT_NONE", ""
+	switch {
+	case f.IsCustomType:
+		f.Hint, f.HintString = "godot::PROPERTY_HINT_RESOURCE_TYPE", f.GodotClassName
+	case f.IsEnum && f.EnumOptionsString != "":
+		f.Hint, f.HintString = "godot::PROPERTY_HINT_ENUM", f.EnumOptionsString
+	case f.IsRepeated && f.IsInnerCustomType:
+		f.Hint, f.HintString = "godot::PROPERTY_HINT_ARRAY_TYPE", f.InnerGodotClassName
+	case f.IsRepeated && f.IsTypedArray:
+		f.Hint, f.HintString = "godot::PROPERTY_HINT_ARRAY_TYPE", godotArrayElementHint(f.InnerGodotType)
 	}
 
-	tmpl = tmpl.Funcs(getTemplateFuncMap())
-	templates := tmpl.Templates()
-	for _, t := range templates {
-		logger.Debug("template loaded", "name", t.Name())
+	if oneof != nil {
+		f.OneofName = oneof.Name
+		f.OneofMember = oneof.Member
+		f.OneofNotSet = oneof.NotSet
+		f.CaseConst = "k" + toPascalCase(f.FieldName)
+		f.Tag = fmt.Sprintf("%s_%s_tag", msg.StructName, f.FieldName)
+	}
+}
+
+func NewCodeGenerator(logger *slog.Logger, destinationDirectoryPath, extensionName string) (*CodeGenerator, error) {
+	tmpl, err := template.New("gdbuf").Option("missingkey=error").ParseFS(templatesFS, "templates/**/*.tmpl", "templates/**/**/*.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("could not parse code generation file templates: %w", err)
 	}
 
 	return &CodeGenerator{
@@ -136,104 +169,78 @@ func NewCodeGenerator(logger *slog.Logger, destinationDirectoryPath, extensionNa
 		destinationDirectoryPath: destinationDirectoryPath,
 		templates:                tmpl,
 		extensionName:            strings.ReplaceAll(extensionName, "-", "_"),
-		protobufVersion:          protobufVersion,
 	}, nil
 }
 
-func getTemplateFuncMap() template.FuncMap {
-	f := sprig.FuncMap()
-	f["toPascalCase"] = toPascalCase
-	f["toUpper"] = strings.ToUpper
-	f["nanopbType"] = func(protoType string) string {
-		// Remove leading dot
-		s := strings.TrimPrefix(protoType, ".")
-		// Replace dots with underscores
-		return strings.ReplaceAll(s, ".", "_")
+// nanopbType turns a fully qualified proto name (".pkg.Outer.Inner") into nanopb's C typedef ("pkg_Outer_Inner").
+func nanopbType(protoType string) string {
+	return strings.ReplaceAll(strings.TrimPrefix(protoType, "."), ".", "_")
+}
+
+// godotBuiltinName maps a C++ member type to the Godot type name, or "" when there is none.
+func godotBuiltinName(godotType string) string {
+	switch godotType {
+	case "bool":
+		return "bool"
+	case "int32_t", "int64_t", "uint32_t", "uint64_t":
+		return "int"
+	case "float", "double":
+		return "float"
+	case "godot::String":
+		return "String"
+	case "godot::PackedByteArray":
+		return "PackedByteArray"
+	case "godot::PackedStringArray":
+		return "PackedStringArray"
+	case "godot::Dictionary":
+		return "Dictionary"
+	case "godot::Array":
+		return "Array"
 	}
-	f["godotVariantType"] = func(godotType string, isCustom bool, isEnum bool) string {
-		if isEnum {
-			return "godot::Variant::INT"
-		}
-		if isCustom {
-			return "godot::Variant::OBJECT"
-		}
-		switch godotType {
-		case "bool":
-			return "godot::Variant::BOOL"
-		case "int32_t", "int64_t", "uint32_t", "uint64_t":
-			return "godot::Variant::INT"
-		case "float", "double":
-			return "godot::Variant::FLOAT"
-		case "godot::String":
-			return "godot::Variant::STRING"
-		case "godot::PackedByteArray":
-			return "godot::Variant::PACKED_BYTE_ARRAY"
-		case "godot::PackedStringArray":
-			return "godot::Variant::PACKED_STRING_ARRAY"
-		case "godot::Dictionary":
-			return "godot::Variant::DICTIONARY"
-		case "godot::Array":
-			return "godot::Variant::ARRAY"
-		default:
-			if strings.HasPrefix(godotType, "godot::TypedArray<") {
-				return "godot::Variant::ARRAY"
-			}
-			return "godot::Variant::NIL"
-		}
+	if strings.HasPrefix(godotType, "godot::TypedArray<") {
+		return "Array"
 	}
-	f["godotDocType"] = func(godotType string, isCustom bool, isEnum bool) string {
-		if isEnum {
-			return "int"
-		}
-		if isCustom {
-			parts := strings.Split(godotType, "::")
-			return parts[len(parts)-1]
-		}
-		switch godotType {
-		case "bool":
-			return "bool"
-		case "int32_t", "int64_t", "uint32_t", "uint64_t":
-			return "int"
-		case "float", "double":
-			return "float"
-		case "godot::String":
-			return "String"
-		case "godot::PackedByteArray":
-			return "PackedByteArray"
-		case "godot::PackedStringArray":
-			return "PackedStringArray"
-		case "godot::Dictionary":
-			return "Dictionary"
-		case "godot::Array":
-			return "Array"
-		default:
-			if strings.HasPrefix(godotType, "godot::TypedArray<") {
-				return "Array"
-			}
-			return "Variant"
-		}
+	return ""
+}
+
+func godotVariantType(godotType string, isCustom bool, isEnum bool) string {
+	switch {
+	case isEnum:
+		return "godot::Variant::INT"
+	case isCustom:
+		return "godot::Variant::OBJECT"
 	}
-	f["godotArrayElementHint"] = func(godotType string) string {
-		switch godotType {
-		case "bool":
-			return "bool"
-		case "int32_t", "int64_t", "uint32_t", "uint64_t":
-			return "int"
-		case "float", "double":
-			return "float"
-		case "godot::String":
-			return "String"
-		case "godot::PackedByteArray":
-			return "PackedByteArray"
-		case "godot::PackedStringArray":
-			return "PackedStringArray"
-		case "godot::Dictionary":
-			return "Dictionary"
-		default:
-			return ""
-		}
+	switch name := godotBuiltinName(godotType); name {
+	case "":
+		return "godot::Variant::NIL"
+	case "PackedByteArray":
+		return "godot::Variant::PACKED_BYTE_ARRAY"
+	case "PackedStringArray":
+		return "godot::Variant::PACKED_STRING_ARRAY"
+	default:
+		return "godot::Variant::" + strings.ToUpper(name)
 	}
-	return f
+}
+
+func godotDocType(godotType string, isCustom bool, isEnum bool) string {
+	switch {
+	case isEnum:
+		return "int"
+	case isCustom:
+		parts := strings.Split(godotType, "::")
+		return parts[len(parts)-1]
+	}
+	if name := godotBuiltinName(godotType); name != "" {
+		return name
+	}
+	return "Variant"
+}
+
+func godotArrayElementHint(godotType string) string {
+	if godotType == "godot::Array" {
+		return ""
+	}
+	return godotBuiltinName(godotType)
 }
 
 func (cg *CodeGenerator) GenerateCode(fileDescriptorSet []*descriptorpb.FileDescriptorProto) error {
@@ -245,7 +252,6 @@ func (cg *CodeGenerator) GenerateCode(fileDescriptorSet []*descriptorpb.FileDesc
 
 	templateData := templateData{
 		GDExtensionName: cg.extensionName,
-		ProtobufVersion: cg.protobufVersion,
 		ProtoData:       *protoData,
 		GlobalEnums:     cg.extractGlobalEnums(fileDescriptorSet),
 	}
@@ -256,7 +262,6 @@ func (cg *CodeGenerator) GenerateCode(fileDescriptorSet []*descriptorpb.FileDesc
 		"register_types.h.tmpl":         "src/register_types.h",
 		"register_types.cpp.tmpl":       "src/register_types.cpp",
 		"messages.h.tmpl":               "src/messages.h",
-		"messages.cpp.tmpl":             "src/messages.cpp",
 		"global_class.h.tmpl":           "src/global_class.h",
 		"global_class.cpp.tmpl":         "src/global_class.cpp",
 	}
@@ -275,8 +280,8 @@ func (cg *CodeGenerator) GenerateCode(fileDescriptorSet []*descriptorpb.FileDesc
 	for _, file := range templateData.ProtoData.Files {
 		cg.logger.Info("processing file", "name", file.ProtoPath)
 		thisProtoFileTemplates := map[string]string{
-			"resource.h.tmpl":   fmt.Sprintf("src/%s.h", strings.TrimSuffix(file.ProtoPath, ".proto")),
-			"resource.cpp.tmpl": fmt.Sprintf("src/%s.cpp", strings.TrimSuffix(file.ProtoPath, ".proto")),
+			"resource.h.tmpl":   "src/" + file.PathNoExt + ".h",
+			"resource.cpp.tmpl": "src/" + file.PathNoExt + ".cpp",
 		}
 		for templateName, outputPath := range thisProtoFileTemplates {
 			err := os.MkdirAll(filepath.Dir(filepath.Join(cg.destinationDirectoryPath, outputPath)), 0755)
@@ -301,7 +306,6 @@ func (cg *CodeGenerator) GenerateCode(fileDescriptorSet []*descriptorpb.FileDesc
 	globalClassMsg := protoMessage{
 		ClassName:   cg.extensionName,
 		Description: "Global extension class containing utilities and enums.",
-		Enums:       templateData.GlobalEnums,
 	}
 	outputPath := filepath.Join(cg.destinationDirectoryPath, "doc_classes", globalClassMsg.ClassName+".xml")
 	if err := cg.executeTemplate("class_doc.xml.tmpl", outputPath, globalClassMsg); err != nil {
@@ -380,19 +384,19 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 
 	globalEnumsMap := make(map[string]bool)
 	globalEnumsOptionsMap := make(map[string]string)
-	
+
 	for _, file := range fileDescriptorSet {
 		pkg := file.GetPackage()
 		prefix := "."
 		if pkg != "" {
 			prefix = "." + pkg + "."
 		}
-		
+
 		// Global enums
 		for _, enum := range file.GetEnumType() {
 			globalEnumsMap[prefix+enum.GetName()] = true
 		}
-		
+
 		traverseEnums(file.GetEnumType(), prefix, globalEnumsOptionsMap)
 		traverseNestedEnums(file.GetMessageType(), prefix, globalEnumsOptionsMap)
 	}
@@ -401,20 +405,33 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 	for _, file := range fileDescriptorSet {
 		var protoFile protoFile
 		protoFile.ProtoPath = file.GetName()
+		protoFile.PathNoExt = strings.TrimSuffix(file.GetName(), ".proto")
+		protoFile.BaseName = path.Base(protoFile.PathNoExt)
+		protoFile.Dir = path.Dir(file.GetName())
+		protoFile.Namespace = xstrings.ToSnakeCase(protoFile.BaseName)
 		protoFile.PackageName = file.GetPackage()
+
+		addDependency := func(godotType, srcFile string) {
+			if srcFile == "" || srcFile == "google::protobuf" || srcFile == protoFile.ProtoPath {
+				return
+			}
+			headerPath := strings.TrimSuffix(srcFile, ".proto") + ".h"
+			if !slices.Contains(protoFile.Dependencies, headerPath) {
+				protoFile.Dependencies = append(protoFile.Dependencies, headerPath)
+			}
+			if i := strings.LastIndex(godotType, "::"); i != -1 {
+				fd := ForwardDecl{Namespace: godotType[:i], ClassName: godotType[i+2:]}
+				if !slices.Contains(protoFile.ForwardDecls, fd) {
+					protoFile.ForwardDecls = append(protoFile.ForwardDecls, fd)
+				}
+			}
+		}
 		cg.logger.Info("processing proto file", "name", file.GetName(), "package", protoFile.PackageName)
 
 		pkg := file.GetPackage()
 		prefix := "."
 		if pkg != "" {
 			prefix = "." + pkg + "."
-		}
-
-		for _, enum := range file.GetEnumType() {
-			var protoEnum protoEnum
-			protoEnum.EnumName = enum.GetName()
-			protoEnum.Options = enumValues(enum)
-			protoFile.Enums = append(protoFile.Enums, protoEnum)
 		}
 
 		// Recursive generation
@@ -431,22 +448,33 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 
 				var protoMessage protoMessage
 				protoMessage.MessageName = godotName
-				protoMessage.ClassName = toPascalCase(godotName)
+				protoMessage.ClassName = godotName
 				currentPath := append(slices.Clone(path), int32(msgIndex))
 				protoMessage.Description = getComments(file.GetSourceCodeInfo(), currentPath)
+				protoMessage.StructName = nanopbType(fullName)
 
-				// Process Oneofs
-				oneofDecls := msg.GetOneofDecl()
-				for i, oneof := range oneofDecls {
+				// proto3 `optional` fields live in synthetic oneofs, which are not real oneofs
+				synthetic := make([]bool, len(msg.GetOneofDecl()))
+				for _, field := range msg.GetField() {
+					if field.OneofIndex != nil && field.GetProto3Optional() {
+						synthetic[field.GetOneofIndex()] = true
+					}
+				}
+				oneofByDecl := make([]int, len(msg.GetOneofDecl()))
+				for i, oneof := range msg.GetOneofDecl() {
+					oneofByDecl[i] = -1
+					if synthetic[i] {
+						continue
+					}
+					name := sanitizeCpp(oneof.GetName())
+					snake := xstrings.ToSnakeCase(name)
+					oneofByDecl[i] = len(protoMessage.Oneofs)
 					protoMessage.Oneofs = append(protoMessage.Oneofs, protoOneof{
-						Name: sanitizeCpp(oneof.GetName()),
+						Name:     name,
+						Member:   snake + "_case",
+						EnumType: toPascalCase(name) + "Case",
+						NotSet:   strings.ToUpper(snake) + "_NOT_SET",
 					})
-					// Note: We will populate Fields later as we iterate fields
-					// Actually, we might want to verify if it's synthetic.
-					// But proto3 optional uses oneofs too.
-					// We can check if any field in this oneof is optional.
-					// Ideally we just map them.
-					_ = i
 				}
 
 				for fieldIndex, field := range msg.GetField() {
@@ -458,14 +486,9 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 					fieldPath := append(slices.Clone(currentPath), 2, int32(fieldIndex))
 					protoMessageField.Description = getComments(file.GetSourceCodeInfo(), fieldPath)
 
+					oneofIdx := -1
 					if field.OneofIndex != nil {
-						// Check if it is NOT a synthetic proto3 optional
-						if !field.GetProto3Optional() {
-							oneofIdx := field.GetOneofIndex()
-							if int(oneofIdx) < len(protoMessage.Oneofs) {
-								protoMessageField.OneofName = protoMessage.Oneofs[oneofIdx].Name
-							}
-						}
+						oneofIdx = oneofByDecl[field.GetOneofIndex()]
 					}
 
 					// Add default descriptions for WKTs
@@ -491,29 +514,8 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 						return fmt.Errorf("could not resolve godot type: %w", err)
 					}
 
-					if isCustom && srcFile != "" && srcFile != "google::protobuf" && srcFile != protoFile.ProtoPath {
-						headerPath := strings.TrimSuffix(srcFile, ".proto") + ".h"
-						if !slices.Contains(protoFile.Dependencies, headerPath) {
-							protoFile.Dependencies = append(protoFile.Dependencies, headerPath)
-						}
-
-						// Add forward declaration
-						parts := strings.Split(godotType, "::")
-						if len(parts) > 1 {
-							className := parts[len(parts)-1]
-							namespace := strings.Join(parts[:len(parts)-1], "::")
-							fd := ForwardDecl{Namespace: namespace, ClassName: className}
-							exists := false
-							for _, existing := range protoFile.ForwardDecls {
-								if existing == fd {
-									exists = true
-									break
-								}
-							}
-							if !exists {
-								protoFile.ForwardDecls = append(protoFile.ForwardDecls, fd)
-							}
-						}
+					if isCustom {
+						addDependency(godotType, srcFile)
 					}
 
 					protoMessageField.IsCustomType = isCustom
@@ -537,30 +539,24 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 								valueField = f
 							}
 						}
-						keyType, _, _, _, _, err := resolveGodotType(keyField, protoFile.ProtoPath, protoFileToDeclaredMessageNames, protoFileToDeclaredEnumNames, allMessageDescriptors, typeToGodotName, globalEnumsMap, cg.extensionName)
-						if err != nil {
+						if _, _, _, _, _, err := resolveGodotType(keyField, protoFile.ProtoPath, protoFileToDeclaredMessageNames, protoFileToDeclaredEnumNames, allMessageDescriptors, typeToGodotName, globalEnumsMap, cg.extensionName); err != nil {
 							return fmt.Errorf("could not resolve map key type: %w", err)
 						}
-						valType, _, valCustom, _, _, err := resolveGodotType(valueField, protoFile.ProtoPath, protoFileToDeclaredMessageNames, protoFileToDeclaredEnumNames, allMessageDescriptors, typeToGodotName, globalEnumsMap, cg.extensionName)
+						valType, _, valCustom, _, valSrcFile, err := resolveGodotType(valueField, protoFile.ProtoPath, protoFileToDeclaredMessageNames, protoFileToDeclaredEnumNames, allMessageDescriptors, typeToGodotName, globalEnumsMap, cg.extensionName)
 						if err != nil {
 							return fmt.Errorf("could not resolve map value type: %w", err)
 						}
-						protoMessageField.MapKeyGodotType = keyType
-						protoMessageField.MapValueGodotType = valType
-						protoMessageField.MapValueIsCustom = valCustom
+						if valCustom {
+							addDependency(valType, valSrcFile)
+						}
 						protoMessageField.GodotType = "godot::Dictionary"
 						protoMessageField.GodotClassName = "Dictionary"
-						// For maps, we might need to know the value's class name if it's a custom object?
-						// The template for maps uses .MapValueGodotType (C++ type).
-						// If MapValueIsCustom is true, it does cast_to<{{ .MapValueGodotType }}>.
-						// It doesn't seem to use property hints for the dictionary content explicitly in the template I read earlier?
-						// Wait, let's recheck resource.cpp.tmpl.
-						protoMessageField.IsRepeated = false
+						protoMessageField.IsCustomType = false
+						protoMessageField.IsInnerCustomType = false
 					} else {
 						protoMessageField.GodotType = godotType
 						protoMessageField.GodotClassName = godotClassName
 						if field.GetLabel() == descriptorpb.FieldDescriptorProto_LABEL_REPEATED {
-							cg.logger.Debug("Repeated field", "name", field.GetName(), "before", protoMessageField.IsCustomType)
 							protoMessageField.IsRepeated = true
 							if protoMessageField.IsInnerCustomType {
 								protoMessageField.GodotType = fmt.Sprintf("godot::TypedArray<%s>", protoMessageField.InnerGodotType)
@@ -586,15 +582,15 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 							protoMessageField.GodotClassName = "Array"
 							protoMessageField.IsCustomType = false
 							protoMessageField.IsEnum = false
-							cg.logger.Debug("Repeated field", "name", field.GetName(), "after", protoMessageField.IsCustomType)
 						}
 					}
 
-					if field.OneofIndex != nil && !field.GetProto3Optional() {
-						oneofIdx := field.GetOneofIndex()
-						if int(oneofIdx) < len(protoMessage.Oneofs) {
-							protoMessage.Oneofs[oneofIdx].Fields = append(protoMessage.Oneofs[oneofIdx].Fields, protoMessageField)
-						}
+					if oneofIdx >= 0 {
+						oneof := &protoMessage.Oneofs[oneofIdx]
+						finishField(&protoMessageField, &protoMessage, oneof)
+						oneof.Fields = append(oneof.Fields, protoMessageField)
+					} else {
+						finishField(&protoMessageField, &protoMessage, nil)
 					}
 
 					protoMessage.Fields = append(protoMessage.Fields, protoMessageField)
