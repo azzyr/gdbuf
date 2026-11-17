@@ -143,18 +143,6 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 		return fmt.Errorf("could not copy custom build files to build directory: %w", err)
 	}
 
-	// Copy doc_classes from source to build dir if they exist (to be packaged later)
-	docsSrc := filepath.Join(generatedCppSourceDir, "doc_classes")
-	if _, err := os.Stat(docsSrc); err == nil {
-		docsDest := filepath.Join(buildDir, "doc_classes")
-		if err := os.MkdirAll(docsDest, 0755); err != nil {
-			return fmt.Errorf("could not create docs directory in build dir: %w", err)
-		}
-		if err := copyFS(os.DirFS(docsSrc), docsDest, nil); err != nil {
-			return fmt.Errorf("could not copy doc files to build dir: %w", err)
-		}
-	}
-
 	if generateOnly {
 		gde.logger.Info("skipping build step as --generate-only was provided")
 		return nil
@@ -204,40 +192,21 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 	buildCmd.Stdout = stdout
 	buildCmd.Stderr = stderr
 
+	// bin persists in the cache; clear it so only this platform's library gets copied
+	binDir := filepath.Join(buildDir, "bin")
+	if err := os.RemoveAll(binDir); err != nil {
+		return fmt.Errorf("could not clear bin directory: %w", err)
+	}
+
 	err = buildCmd.Run()
 	if err != nil {
 		return fmt.Errorf("build error: %w", err)
 	}
-	fmt.Fprintln(stdout, "Build command finished, copying artifacts...")
 	gde.logger.Info("build successful")
 
-	fmt.Fprintln(stdout, "Copying binaries to intermediate location...")
-	if err = copyFS(os.DirFS(filepath.Join(buildDir, "bin")), filepath.Join(buildDir, "out", "dist"), stdout); err != nil {
+	if err = copyFS(os.DirFS(binDir), filepath.Join(outputDir, "dist"), stdout); err != nil {
 		return fmt.Errorf("could not copy build output to output directory: %w", err)
 	}
-
-	if err = os.MkdirAll(outputDir, 0755); err != nil {
-		return fmt.Errorf("could not create output directory: %w", err)
-	}
-
-	fmt.Fprintln(stdout, "Copying artifacts to final destination...")
-	if err = copyFS(os.DirFS(filepath.Join(buildDir, "out")), outputDir, stdout); err != nil {
-		return fmt.Errorf("could not copy build output to output directory: %w", err)
-	}
-
-	// Also copy doc_classes to the final output (addon)
-	if _, err := os.Stat(docsSrc); err == nil {
-		docsDest := filepath.Join(outputDir, "doc_classes")
-		if err := os.MkdirAll(docsDest, 0755); err != nil {
-			return fmt.Errorf("could not create docs directory in output: %w", err)
-		}
-		fmt.Fprintln(stdout, "Copying documentation...")
-		if err := copyFS(os.DirFS(docsSrc), docsDest, stdout); err != nil {
-			return fmt.Errorf("could not copy doc files to output: %w", err)
-		}
-	}
-
-	fmt.Fprintln(stdout, "Build procedure complete.")
 	return nil
 }
 

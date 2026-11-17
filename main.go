@@ -169,8 +169,15 @@ func main() {
 				os.Exit(1)
 			}
 		}
-	} else {
-		logger.Warn("no valid platform configuration specified, nothing to build")
+	}
+
+	if *generateOnlyPtr {
+		return
+	}
+	// runs without --platform too, so libraries built elsewhere and copied into <out>/dist get listed
+	if err := gdextension.Finalize(*cppOutputDirPtr, *extensionArtifactOutputDirPtr); err != nil {
+		logger.Error("could not write gdextension manifest", "err", err)
+		os.Exit(1)
 	}
 }
 
