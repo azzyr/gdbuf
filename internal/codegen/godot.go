@@ -94,18 +94,7 @@ func resolveGodotType(field *descriptorpb.FieldDescriptorProto, currentProtoPath
 			}
 		} else {
 			isCustom = true
-			var ok bool
-			godotClassName, ok = typeToGodotName[fullTypeName]
-			if !ok {
-				// Fallback or error? Should be there.
-				// Try simple name
-				if lastDot := strings.LastIndex(fullTypeName, "."); lastDot != -1 {
-					godotClassName = fullTypeName[lastDot+1:]
-				} else {
-					godotClassName = fullTypeName
-				}
-			}
-			godotClassName = toPascalCase(godotClassName)
+			godotClassName = typeToGodotName[fullTypeName]
 
 			if srcFile == currentProtoPath {
 				godotType = godotClassName

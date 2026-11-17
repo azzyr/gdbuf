@@ -448,7 +448,7 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 
 				var protoMessage protoMessage
 				protoMessage.MessageName = godotName
-				protoMessage.ClassName = toPascalCase(godotName)
+				protoMessage.ClassName = godotName
 				currentPath := append(slices.Clone(path), int32(msgIndex))
 				protoMessage.Description = getComments(file.GetSourceCodeInfo(), currentPath)
 				protoMessage.StructName = nanopbType(fullName)
