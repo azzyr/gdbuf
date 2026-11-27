@@ -65,7 +65,6 @@ type ForwardDecl struct {
 type protoMessage struct {
 	ClassName   string
 	MessageName string
-	StructName  string
 	Description string
 	Fields      []protoMessageField
 	Oneofs      []protoOneof
@@ -114,6 +113,12 @@ type protoMessageField struct {
 	OneofName           string
 	Number              int32
 	EnumOptionsString   string
+	// gdbuf::Kind of the value, the element for repeated fields
+	Kind string
+	// map fields
+	KeyKind, ValueKind, ValueType string
+	// repeated message fields
+	ElemType string
 
 	// set by finishField
 	Name        string
@@ -123,7 +128,6 @@ type protoMessageField struct {
 	HintString  string
 	DocType     string
 	CaseConst   string
-	Tag         string
 	OneofMember string
 	OneofNotSet string
 }
@@ -154,8 +158,28 @@ func finishField(f *protoMessageField, msg *protoMessage, oneof *protoOneof) {
 		f.OneofMember = oneof.Member
 		f.OneofNotSet = oneof.NotSet
 		f.CaseConst = "k" + toPascalCase(f.FieldName)
-		f.Tag = fmt.Sprintf("%s_%s_tag", msg.StructName, f.FieldName)
 	}
+}
+
+var wktKinds = []string{"Timestamp", "Duration", "DoubleValue", "FloatValue", "Int64Value", "UInt64Value", "Int32Value", "UInt32Value", "BoolValue", "StringValue", "BytesValue"}
+
+// codecKind names the gdbuf::Kind that encodes the field's values
+func codecKind(field *descriptorpb.FieldDescriptorProto) string {
+	switch field.GetType() {
+	case descriptorpb.FieldDescriptorProto_TYPE_MESSAGE:
+		if short, ok := strings.CutPrefix(field.GetTypeName(), ".google.protobuf."); ok {
+			if slices.Contains(wktKinds, short) {
+				return short
+			}
+			return "Unsupported"
+		}
+		return "Message"
+	case descriptorpb.FieldDescriptorProto_TYPE_ENUM:
+		return "Enum"
+	case descriptorpb.FieldDescriptorProto_TYPE_GROUP:
+		return "Unsupported"
+	}
+	return toPascalCase(strings.ToLower(strings.TrimPrefix(field.GetType().String(), "TYPE_")))
 }
 
 func NewCodeGenerator(logger *slog.Logger, destinationDirectoryPath, extensionName string) (*CodeGenerator, error) {
@@ -170,11 +194,6 @@ func NewCodeGenerator(logger *slog.Logger, destinationDirectoryPath, extensionNa
 		templates:                tmpl,
 		extensionName:            strings.ReplaceAll(extensionName, "-", "_"),
 	}, nil
-}
-
-// nanopbType turns a fully qualified proto name (".pkg.Outer.Inner") into nanopb's C typedef ("pkg_Outer_Inner").
-func nanopbType(protoType string) string {
-	return strings.ReplaceAll(strings.TrimPrefix(protoType, "."), ".", "_")
 }
 
 // godotBuiltinName maps a C++ member type to the Godot type name, or "" when there is none.
@@ -450,7 +469,6 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 				protoMessage.ClassName = godotName
 				currentPath := append(slices.Clone(path), int32(msgIndex))
 				protoMessage.Description = getComments(file.GetSourceCodeInfo(), currentPath)
-				protoMessage.StructName = nanopbType(fullName)
 
 				// proto3 `optional` fields live in synthetic oneofs, which are not real oneofs
 				synthetic := make([]bool, len(msg.GetOneofDecl()))
@@ -482,6 +500,8 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 					protoMessageField.ProtoTypeName = field.GetTypeName()
 
 					protoMessageField.Number = field.GetNumber()
+					protoMessageField.Kind = codecKind(field)
+					protoMessageField.ElemType, protoMessageField.ValueType = "void", "void"
 					fieldPath := append(slices.Clone(currentPath), 2, int32(fieldIndex))
 					protoMessageField.Description = getComments(file.GetSourceCodeInfo(), fieldPath)
 
@@ -547,7 +567,9 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 						}
 						if valCustom {
 							addDependency(valType, valSrcFile)
+							protoMessageField.ValueType = valType
 						}
+						protoMessageField.KeyKind, protoMessageField.ValueKind = codecKind(keyField), codecKind(valueField)
 						protoMessageField.GodotType = "godot::Dictionary"
 						protoMessageField.GodotClassName = "Dictionary"
 						protoMessageField.IsCustomType = false
@@ -560,6 +582,7 @@ func (cg *CodeGenerator) extractProtoData(fileDescriptorSet []*descriptorpb.File
 							if protoMessageField.IsInnerCustomType {
 								protoMessageField.GodotType = fmt.Sprintf("godot::TypedArray<%s>", protoMessageField.InnerGodotType)
 								protoMessageField.IsTypedArray = true
+								protoMessageField.ElemType = protoMessageField.InnerGodotType
 							} else {
 								switch protoMessageField.InnerGodotType {
 								case "bool":

@@ -4,7 +4,6 @@
 #include "godot_cpp/classes/resource.hpp"
 #include "godot_cpp/classes/ref.hpp"
 #include <godot_cpp/variant/typed_array.hpp>
-#include "{{ .BaseName }}.pb.h"
 #include "messages.h"
 #include "global_class.h"
 {{- range .Dependencies }}
@@ -31,8 +30,6 @@ class {{ .ClassName }} : public godot::Resource
     GDCLASS( {{ .ClassName }}, godot::Resource )
 
 public:
-    using pb_type = {{ .StructName }};
-    static inline const pb_msgdesc_t *const pb_fields = {{ .StructName }}_fields;
     {{- range .Oneofs }}
     enum {{ .EnumType }}
     {
@@ -59,8 +56,9 @@ public:
     godot::PackedByteArray to_byte_array() const;
     godot::Error from_byte_array( const godot::PackedByteArray &p_bytes );
     godot::String _to_string() const;
-    void to_pb( pb_type &r_msg ) const;
-    void from_pb( const pb_type &p_msg );
+    bool encode_fields( pb_ostream_t *r_stream ) const;
+    bool decode_fields( pb_istream_t *p_stream, int p_depth );
+    void clear_fields();
     {{- range .Oneofs }}
     {{ .EnumType }} get_{{ .Member }}() const;
     {{- end }}
@@ -72,19 +70,6 @@ public:
 {{- end }}
 
 } // namespace gdbuf::{{ .Namespace }}
-
-namespace gdbuf
-{
-{{- range .Messages }}
-
-template <>
-struct wrapper_for<{{ .StructName }}>
-{
-    using type = {{ $.Namespace }}::{{ .ClassName }};
-};
-{{- end }}
-
-} // namespace gdbuf
 
 {{- range .Messages }}
 {{- $class := .ClassName }}

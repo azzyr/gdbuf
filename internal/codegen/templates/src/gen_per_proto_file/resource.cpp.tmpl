@@ -54,44 +54,70 @@ godot::Error {{ $class }}::from_byte_array( const godot::PackedByteArray &p_byte
     return gdbuf::decode( *this, p_bytes );
 }
 
-void {{ $class }}::to_pb( pb_type &r_msg ) const
+bool {{ $class }}::encode_fields( pb_ostream_t *s ) const
 {
     {{- range .Fields }}
     {{- if .OneofName }}
-    if ( {{ .OneofMember }} == {{ .CaseConst }} )
-    {
-        r_msg.which_{{ .OneofName }} = {{ .Tag }};
-        gdbuf::write_field( r_msg.{{ .OneofName }}.{{ .FieldName }}, {{ .Name }} );
-    }
-    {{- else if .IsRepeated }}
-    gdbuf::write_repeated( r_msg.{{ .FieldName }}, r_msg.{{ .FieldName }}_count, {{ .Name }} );
+    if ( this->{{ .OneofMember }} == {{ .CaseConst }} && !gdbuf::write_field<gdbuf::Kind::{{ .Kind }}>( s, {{ .Number }}, this->{{ .Name }}, true ) )
     {{- else if .IsMap }}
-    gdbuf::write_map( r_msg.{{ .FieldName }}, r_msg.{{ .FieldName }}_count, {{ .Name }} );
+    if ( !gdbuf::write_map<gdbuf::Kind::{{ .KeyKind }}, gdbuf::Kind::{{ .ValueKind }}, {{ .ValueType }}>( s, {{ .Number }}, this->{{ .Name }} ) )
+    {{- else if .IsRepeated }}
+    if ( !gdbuf::write_repeated<gdbuf::Kind::{{ .Kind }}, {{ .ElemType }}>( s, {{ .Number }}, this->{{ .Name }} ) )
     {{- else }}
-    gdbuf::write_field( r_msg.{{ .FieldName }}, {{ .Name }} );
+    if ( !gdbuf::write_field<gdbuf::Kind::{{ .Kind }}>( s, {{ .Number }}, this->{{ .Name }} ) )
     {{- end }}
+        return false;
     {{- end }}
+    return true;
 }
 
-void {{ $class }}::from_pb( const pb_type &p_msg )
+bool {{ $class }}::decode_fields( pb_istream_t *s, int depth )
+{
+    while ( s->bytes_left > 0 )
+    {
+        uint32_t number;
+        pb_wire_type_t wire;
+        if ( !gdbuf::read_tag( s, number, wire ) )
+            return false;
+        bool ok;
+        switch ( number )
+        {
+        {{- range .Fields }}
+        case {{ .Number }}:
+        {
+            {{- if .OneofName }}
+            bool hit = false;
+            if ( this->{{ .OneofMember }} != {{ .CaseConst }} )
+                this->{{ .Name }} = {{ .CppType }}();
+            ok = gdbuf::read_field<gdbuf::Kind::{{ .Kind }}>( s, wire, this->{{ .Name }}, depth, &hit );
+            if ( hit )
+                this->{{ .OneofMember }} = {{ .CaseConst }};
+            {{- else if .IsMap }}
+            ok = gdbuf::read_map<gdbuf::Kind::{{ .KeyKind }}, gdbuf::Kind::{{ .ValueKind }}, {{ .ValueType }}>( s, wire, this->{{ .Name }}, depth );
+            {{- else if .IsRepeated }}
+            ok = gdbuf::read_repeated<gdbuf::Kind::{{ .Kind }}, {{ .ElemType }}>( s, wire, this->{{ .Name }}, depth );
+            {{- else }}
+            ok = gdbuf::read_field<gdbuf::Kind::{{ .Kind }}>( s, wire, this->{{ .Name }}, depth );
+            {{- end }}
+            break;
+        }
+        {{- end }}
+        default:
+            ok = pb_skip_field( s, wire );
+        }
+        if ( !ok )
+            return false;
+    }
+    return true;
+}
+
+void {{ $class }}::clear_fields()
 {
     {{- range .Oneofs }}
     {{ .Member }} = {{ .NotSet }};
     {{- end }}
     {{- range .Fields }}
-    {{- if .OneofName }}
-    if ( p_msg.which_{{ .OneofName }} == {{ .Tag }} )
-    {
-        {{ .OneofMember }} = {{ .CaseConst }};
-        gdbuf::read_field( {{ .Name }}, p_msg.{{ .OneofName }}.{{ .FieldName }} );
-    }
-    {{- else if .IsRepeated }}
-    gdbuf::read_repeated( {{ .Name }}, p_msg.{{ .FieldName }}, p_msg.{{ .FieldName }}_count );
-    {{- else if .IsMap }}
-    gdbuf::read_map( {{ .Name }}, p_msg.{{ .FieldName }}, p_msg.{{ .FieldName }}_count );
-    {{- else }}
-    gdbuf::read_field( {{ .Name }}, p_msg.{{ .FieldName }} );
-    {{- end }}
+    {{ .Name }} = {{ .CppType }}();
     {{- end }}
 }
 {{- range .Oneofs }}

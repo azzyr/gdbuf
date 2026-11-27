@@ -4,10 +4,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/azzyr/gdbuf/internal/codegen"
@@ -90,19 +88,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Prepare Nanopb Generator (extracted to temp)
-	genTmpDir, err := os.MkdirTemp("", "nanopb-gen-")
-	if err != nil {
-		logger.Error("could not create temp dir for generator", "err", err)
-		os.Exit(1)
-	}
-	defer os.RemoveAll(genTmpDir)
-
 	gdExtensionBuilder := gdextension.NewGDExtensionBuilder(logger, *cacheDirPtr, *extensionNamePtr)
-	if err := gdExtensionBuilder.ExtractNanopbGenerator(genTmpDir); err != nil {
-		logger.Error("could not extract nanopb generator", "err", err)
-		os.Exit(1)
-	}
 
 	protoc, err := protoc.NewProtoCompiler(logger.WithGroup("protoc"))
 	if err != nil {
@@ -116,13 +102,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	compiledProtoCppTempDirPath, err := protoc.CompileNanopb(*protoInputDirPtr, includeDirs, genTmpDir)
-	if err != nil {
-		logger.Error("could not compile proto cpp (nanopb)", "err", err)
-		os.Exit(1)
-	}
-	defer os.RemoveAll(compiledProtoCppTempDirPath)
-
 	codeGenerator, err := codegen.NewCodeGenerator(logger, *cppOutputDirPtr, *extensionNamePtr)
 	if err != nil {
 		logger.Error("could not create new code generator", "err", err)
@@ -132,13 +111,6 @@ func main() {
 	err = codeGenerator.GenerateCode(descriptorSet)
 	if err != nil {
 		logger.Error("problem generating code", "err", err)
-		os.Exit(1)
-	}
-
-	compiledProtoCppOutDirPath := filepath.Join(*cppOutputDirPtr, "src")
-	err = copyDir(compiledProtoCppTempDirPath, compiledProtoCppOutDirPath)
-	if err != nil {
-		logger.Error("problem copying compiled cpp proto to directory", "err", err)
 		os.Exit(1)
 	}
 
@@ -178,38 +150,6 @@ func main() {
 		logger.Error("could not write gdextension manifest", "err", err)
 		os.Exit(1)
 	}
-}
-
-func copyDir(src string, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		relPath, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		dstPath := filepath.Join(dst, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(dstPath, info.Mode())
-		}
-
-		srcFile, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer srcFile.Close()
-
-		dstFile, err := os.Create(dstPath)
-		if err != nil {
-			return err
-		}
-		defer dstFile.Close()
-
-		_, err = io.Copy(dstFile, srcFile)
-		return err
-	})
 }
 
 func checkPath(path string, isDir bool) error {

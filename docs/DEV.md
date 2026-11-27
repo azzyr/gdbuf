@@ -6,15 +6,15 @@
 
 The program operates in a linear pipeline:
 1.  **Input Parsing**: Accepts a directory of `.proto` files and optional include directories for import resolution.
-2.  **Proto Compilation**: Parses the `.proto` files in-process with `github.com/bufbuild/protocompile` (no `protoc` needed) into descriptors, then runs the Nanopb plugin on them to generate C headers/sources.
+2.  **Proto Compilation**: Parses the `.proto` files in-process with `github.com/bufbuild/protocompile` (no `protoc` needed) into descriptors.
 3.  **Code Generation**: Parses the descriptor set to understand the message structure, then executes Go `text/template` templates to generate Godot-specific C++ wrappers.
-4.  **GDExtension Compilation**: Compiles godot-cpp, the generated wrappers and the embedded **Nanopb** library into a shared library by calling the compiler directly (`compile.go`), no build system. godot-cpp is compiled once per toolchain, flag set and gdbuf version into the build cache (`~/.cache/gdbuf` or local `.gdbuf_cache`); the generated sources are recompiled every run.
+4.  **GDExtension Compilation**: Compiles godot-cpp, the generated wrappers and the embedded **Nanopb** runtime into a shared library by calling the compiler directly (`compile.go`), no build system. godot-cpp is compiled once per toolchain, flag set and gdbuf version into the build cache (`~/.cache/gdbuf` or local `.gdbuf_cache`); the generated sources are recompiled every run.
 
 ## Build Dependencies
 
 | Platform | User-Provided Dependencies | Embedded in `gdbuf` |
 | :--- | :--- | :--- |
-| **All Platforms** | `go` (1.25+), `python3` with `protobuf` (nanopb generator) | `godot-cpp` and its pre-generated bindings, `nanopb` |
+| **All Platforms** | `go` (1.25+) | `godot-cpp` and its pre-generated bindings, the `nanopb` runtime |
 | **Linux / Windows / macOS** | `zig` 0.17 (or `ZIG` set to its path), from any host | - |
 | **Web (WASM)** | `emcc` from emsdk; Godot loads web extensions as emscripten side modules | - |
 | **Android** | NDK 28.1 via `ANDROID_NDK_ROOT`, or `ANDROID_HOME` with `ndk/28.1.13356709` | - |
@@ -34,7 +34,6 @@ godot-cpp normally generates its bindings with Python at build time. `make build
 -   **Responsibility**: Parses `.proto` files in-process with `protocompile`; `protoc` is not used.
 -   **Key Functions**:
     -   `BuildDescriptorSet`: Returns the `FileDescriptorProto`s of the proto files, imports first, as `protoc --descriptor_set_out` ordered them.
-    -   `CompileNanopb`: Builds a `CodeGeneratorRequest` and pipes it to the `protoc-gen-nanopb` plugin the way `protoc` would, then writes the Nanopb C headers/sources (`.pb.h`, `.pb.c`) from its response.
 -   **Notes**: Enforces strict include paths (relative to current directory) to avoid aliasing issues.
 
 ### `internal/codegen`
@@ -64,24 +63,13 @@ We map standard Proto types to Godot Variants:
 ### Resource Wrapper (`resource.h.tmpl`)
 Every Protobuf message is wrapped in a class inheriting from `godot::Resource`.
 -   **Properties**: Fields are registered with `ADD_PROPERTY`, making them visible in the Godot Inspector.
--   **Serialization**: We generate `to_byte_array()` and `from_byte_array()` methods that internally use **Nanopb** functions (`pb_encode`, `pb_decode`) to serialize to/from the standard Protobuf binary format.
+-   **Serialization**: Each class gets generated `encode_fields`, `decode_fields` and `clear_fields`, one line per field, calling the helpers in `messages.h.tmpl`. Those write the protobuf wire format straight from the Godot members with nanopb's low-level stream functions (`pb_encode_varint`, `pb_decode_tag`, substreams); nanopb's generator and structs are not used. `codecKind` in `codegen.go` picks the helper (`gdbuf::Kind`) for each field.
 -   **Memory Management**: Custom message fields (nested messages) are stored using `godot::Ref<T>`. This ensures that the Godot RefCounted system correctly manages the lifecycle of nested resources, preventing dangling pointers and memory leaks.
 
 ## Development Workflow
 
 1.  **Make Changes**: Edit Go code or Templates.
 2.  **Rebuild Tool**: Run `make build` to update `bin/gdbuf`.
-3.  **Test**: Run `make test-full`. This:
-    -   Cleans previous outputs.
-    -   Builds the GDExtension for **all supported platforms** (Linux, Windows, Web, Android) using `test-all-platforms`.
-    -   Installs the artifacts into a test Godot project.
-    -   Runs a headless Godot instance (on the host) to execute GDScript integration tests (`test-godot`).
-    -   *Note*: This requires all cross-compilers to be present. For a faster, host-only test (Linux), use `make test-linux`.
-    -   **Platform Specific Tests**:
-        -   `make test-linux`: Builds and tests for Linux.
-        -   `make test-web`: Builds for Web (wasm32).
-        -   `make test-windows`: Builds for Windows.
-        -   `make test-android`: Builds for Android.
 
 ## Future Improvements
 -   **Nested Enums**: Currently top-level enums work best. Nested enums map to `int` but don't generate C++ enum definitions in the wrapper namespace.
@@ -89,4 +77,4 @@ Every Protobuf message is wrapped in a class inheriting from `godot::Resource`.
     -   **Linux/Windows/macOS**: Built with zig from any host.
     -   **Android**: Built with the NDK's clang; the NDK is not downloaded automatically.
     -   **Web**: Built with `emcc`; emsdk is not downloaded automatically and needs Python 3.
--   **Map Values (Structs)**: Support for `map<Key, Message>` with Nanopb needs verification for complex nested types.
+-   **Extension names**: `--name` equal to a proto file's name (`--name foo` with `foo.proto`) does not compile; the global class and the file's namespace collide.

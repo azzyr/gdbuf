@@ -76,7 +76,7 @@ func newToolchain(platform, arch string, threads, debug bool) (toolchain, error)
 		return tc, fmt.Errorf("unsupported platform %s-%s", platform, arch)
 	}
 
-	defines := []string{"GDEXTENSION", "NDEBUG", "PB_ENABLE_MALLOC", strings.ToUpper(platform) + "_ENABLED"}
+	defines := []string{"GDEXTENSION", "NDEBUG", strings.ToUpper(platform) + "_ENABLED"}
 	if platform != "windows" {
 		defines = append(defines, "UNIX_ENABLED")
 	}

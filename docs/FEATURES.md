@@ -21,9 +21,9 @@ Protobuf types are mapped to their most natural Godot equivalents:
 
 | Protobuf Type | Godot Type | Note |
 | :--- | :--- | :--- |
-| `int32`, `int64` | `int` | |
+| `int32`, `int64`, `uint32`, `uint64`, `sint*`, `fixed*`, `sfixed*` | `int` | `uint64` and `fixed64` above 2^63 show as negative, but round-trip exactly |
 | `float`, `double` | `float` | |
-| `string` | `String` | |
+| `string` | `String` | cannot hold NUL characters |
 | `bytes` | `PackedByteArray` | |
 | `repeated` field | `Array` | Typed array (e.g. `Array[int]`) where possible |
 | `map` | `Dictionary` | |
@@ -34,9 +34,10 @@ Protobuf types are mapped to their most natural Godot equivalents:
 Common Google types are automatically converted to native Godot types for ease of use:
 - **Timestamp** → `int` (Unix timestamp in milliseconds)
 - **Duration** → `float` (Seconds)
-- **Struct** → `Dictionary`
-- **Value** → `Variant`
-- **ListValue** → `Array`
+- **Wrappers** (`StringValue`, `Int32Value`, `BoolValue`, `DoubleValue`, …) → the plain value
+
+Godot has no "unset" for these, so the default value (`0`, `""`, `false`) means unset and is not sent.
+- **Struct**, **Value**, **ListValue**, **Any**, **Empty**, **FieldMask** → typed properties exist, but the data is not encoded yet and is skipped when decoding
 
 ### 4. Editor Documentation (currently broken)
 Comments in your `.proto` files are converted into **Godot Editor Documentation**.
@@ -46,7 +47,8 @@ Comments in your `.proto` files are converted into **Godot Editor Documentation*
 ### 5. Serialization
 Classes include helper methods for binary serialization compatible with standard Protobuf libraries.
 - `to_byte_array() -> PackedByteArray`
-- `from_byte_array(data: PackedByteArray)`
+- `from_byte_array(data: PackedByteArray) -> Error`: `ERR_PARSE_ERROR` on malformed input, and the message is left cleared
+- proto3 defaults are not sent; unknown fields are skipped
 
 ### 6. Debugging
 Messages implement `_to_string()`, allowing you to print them in GDScript for a human-readable text representation (using Protobuf's text format).

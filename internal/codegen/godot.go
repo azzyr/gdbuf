@@ -21,8 +21,8 @@ var protoGodotTypeMap = map[descriptorpb.FieldDescriptorProto_Type]string{
 	descriptorpb.FieldDescriptorProto_TYPE_UINT64:   "uint64_t",
 	descriptorpb.FieldDescriptorProto_TYPE_SINT32:   "int32_t",
 	descriptorpb.FieldDescriptorProto_TYPE_SINT64:   "int64_t",
-	descriptorpb.FieldDescriptorProto_TYPE_FIXED32:  "int32_t",
-	descriptorpb.FieldDescriptorProto_TYPE_FIXED64:  "int64_t",
+	descriptorpb.FieldDescriptorProto_TYPE_FIXED32:  "uint32_t",
+	descriptorpb.FieldDescriptorProto_TYPE_FIXED64:  "uint64_t",
 	descriptorpb.FieldDescriptorProto_TYPE_SFIXED32: "int32_t",
 	descriptorpb.FieldDescriptorProto_TYPE_SFIXED64: "int64_t",
 }
@@ -40,9 +40,15 @@ var wktMap = map[string]godotTypeInfo{
 	"ListValue":   {"godot::Array", "Array"},
 	"Value":       {"godot::Variant", "Variant"},
 	"Empty":       {"godot::Variant", "Variant"},
-	"StringValue": {"godot::String", "String"},
+	"DoubleValue": {"double", "float"},
+	"FloatValue":  {"float", "float"},
+	"Int64Value":  {"int64_t", "int"},
+	"UInt64Value": {"uint64_t", "int"},
 	"Int32Value":  {"int32_t", "int"},
+	"UInt32Value": {"uint32_t", "int"},
 	"BoolValue":   {"bool", "bool"},
+	"StringValue": {"godot::String", "String"},
+	"BytesValue":  {"godot::PackedByteArray", "PackedByteArray"},
 	"FieldMask":   {"godot::PackedStringArray", "PackedStringArray"},
 }
 
@@ -88,9 +94,7 @@ func resolveGodotType(field *descriptorpb.FieldDescriptorProto, currentProtoPath
 				godotType = info.GodotType
 				godotClassName = info.GodotClassName
 			} else {
-				isCustom = true
-				godotType = fmt.Sprintf("google::protobuf::%s", shortName)
-				godotClassName = shortName
+				godotType, godotClassName = "godot::Variant", "Variant"
 			}
 		} else {
 			isCustom = true
