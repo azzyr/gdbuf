@@ -14,7 +14,7 @@ var libraryExts = []string{".so", ".dll", ".dylib", ".wasm"}
 
 // Finalize copies the docs and writes the .gdextension listing every library found in outputDir/dist.
 func Finalize(genDir, outputDir string) error {
-	if err := copyFS(os.DirFS(filepath.Join(genDir, "doc_classes")), filepath.Join(outputDir, "doc_classes"), nil); err != nil {
+	if err := copyFS(os.DirFS(filepath.Join(genDir, "doc_classes")), filepath.Join(outputDir, "doc_classes")); err != nil {
 		return fmt.Errorf("could not copy docs: %w", err)
 	}
 
@@ -36,7 +36,7 @@ func Finalize(genDir, outputDir string) error {
 	return os.WriteFile(filepath.Join(outputDir, manifestName), []byte(content), 0644)
 }
 
-// lib<name>.<platform>.<target>[.double].<arch>[.nothreads].<ext>
+// lib<name>.<platform>.<target>.<arch>[.nothreads].<ext>
 func libraryEntries(files []string) []string {
 	type lib struct{ base, target, file string }
 	var libs []lib
@@ -51,11 +51,9 @@ func libraryEntries(files []string) []string {
 			continue
 		}
 		platform, target := parts[1], strings.TrimPrefix(parts[2], "template_")
-		arch, precision, threads := "", "single", ""
+		arch, threads := "", ""
 		for _, p := range parts[3:] {
 			switch p {
-			case "double":
-				precision = p
 			case "nothreads":
 				threads = ".nothreads"
 			case "dev", "simulator":
@@ -63,7 +61,7 @@ func libraryEntries(files []string) []string {
 				arch = p
 			}
 		}
-		base := platform + "." + arch + "." + precision + threads
+		base := platform + "." + arch + ".single" + threads
 		libs = append(libs, lib{base, target, f})
 		targets[base]++
 	}

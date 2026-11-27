@@ -1,3 +1,4 @@
-CMakeLists.txt
-src/
-out/
+/CMakeLists.txt
+/src/
+/out/
+/godot-cpp-gen/

@@ -47,7 +47,6 @@ func main() {
 
 	debugPtr := flag.Bool("debug", false, "enable debug build symbols and tooling configurations")
 	threadedPtr := flag.Bool("threaded", false, "enable multi-threaded support profiles")
-	doublePtr := flag.Bool("double", false, "enable double-precision floating point rendering variables")
 
 	flag.Parse()
 
@@ -99,7 +98,7 @@ func main() {
 	}
 	defer os.RemoveAll(genTmpDir)
 
-	gdExtensionBuilder := gdextension.NewGDExtensionBuilder(logger, *cacheDirPtr)
+	gdExtensionBuilder := gdextension.NewGDExtensionBuilder(logger, *cacheDirPtr, *extensionNamePtr)
 	if err := gdExtensionBuilder.ExtractNanopbGenerator(genTmpDir); err != nil {
 		logger.Error("could not extract nanopb generator", "err", err)
 		os.Exit(1)
@@ -163,7 +162,7 @@ func main() {
 	if len(validPlatforms) > 0 {
 		for _, platform := range validPlatforms {
 			logger.Info("building gdextension", "platform", platform)
-			err = gdExtensionBuilder.Build(*cppOutputDirPtr, *extensionArtifactOutputDirPtr, platform, *debugPtr, *doublePtr, *threadedPtr, *generateOnlyPtr, os.Stdout, os.Stderr)
+			err = gdExtensionBuilder.Build(*cppOutputDirPtr, *extensionArtifactOutputDirPtr, platform, *debugPtr, *threadedPtr, *generateOnlyPtr, os.Stdout, os.Stderr)
 			if err != nil {
 				logger.Error("problem building gdextension", "platform", platform, "err", err)
 				os.Exit(1)

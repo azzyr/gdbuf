@@ -8,21 +8,22 @@ The program operates in a linear pipeline:
 1.  **Input Parsing**: Accepts a directory of `.proto` files and optional include directories for import resolution.
 2.  **Proto Compilation**: Parses the `.proto` files in-process with `github.com/bufbuild/protocompile` (no `protoc` needed) into descriptors, then runs the Nanopb plugin on them to generate C headers/sources.
 3.  **Code Generation**: Parses the descriptor set to understand the message structure, then executes Go `text/template` templates to generate Godot-specific C++ wrappers.
-4.  **GDExtension Compilation**: Orchestrates a CMake build to compile the generated wrappers + the embedded **Nanopb** library into a shared library. It uses a persistent build cache (in `~/.cache/gdbuf` or local `.gdbuf_cache`) to enable incremental builds.
+4.  **GDExtension Compilation**: Compiles godot-cpp, the generated wrappers and the embedded **Nanopb** library into a shared library by calling the compiler directly (`compile.go`), no build system. godot-cpp is compiled once per toolchain, flag set and gdbuf version into the build cache (`~/.cache/gdbuf` or local `.gdbuf_cache`); the generated sources are recompiled every run.
 
 ## Build Dependencies
 
-To successfully build `gdbuf` and compile GDExtensions for all supported platforms, your development environment needs specific dependencies. Some are required to be installed by you, while others are automatically managed by `gdbuf`.
-
-| Platform | User-Provided Dependencies | Managed by `gdbuf` (Automatic) |
+| Platform | User-Provided Dependencies | Embedded in `gdbuf` |
 | :--- | :--- | :--- |
-| **All Platforms** | `go` (1.21+), `cmake` (3.16+), `make` or `ninja` | `godot-cpp`, `nanopb` |
-| **Linux** | `gcc` or `clang++` | - |
-| **Windows (Cross)** | MinGW-w64 (`x86_64-w64-mingw32-g++`) | - |
-| **Web (WASM)** | `python3` | `emsdk` (Emscripten SDK)* |
-| **Android** | - | `Android NDK` (r28b)* |
+| **All Platforms** | `go` (1.25+), `python3` with `protobuf` (nanopb generator) | `godot-cpp` and its pre-generated bindings, `nanopb` |
+| **Linux / Windows / macOS** | `zig` 0.17 (or `ZIG` set to its path), from any host | - |
+| **Web (WASM)** | `emcc` from emsdk; Godot loads web extensions as emscripten side modules | - |
+| **Android** | NDK 28.1 via `ANDROID_NDK_ROOT`, or `ANDROID_HOME` with `ndk/28.1.13356709` | - |
 
-*\* Managed dependencies are downloaded to the user cache directory (e.g., `~/.cache/gdbuf`) if the corresponding environment variables (`EMSDK` or `ANDROID_NDK_HOME`) are not set.*
+Compiler flags mirror godot-cpp's `tools/<platform>.py` and `tools/common_compiler_flags.py`; check them when updating the submodule.
+
+### godot-cpp bindings
+
+godot-cpp normally generates its bindings with Python at build time. `make build` and `make build-all` run `tools/gen_bindings.py` first, which writes them to `internal/gdextension/buildenv/godot-cpp-gen/64` (64-bit targets) and `32` (wasm32); they are gitignored and embedded in the binary, so gdbuf users need no Python. Building gdbuf therefore needs `python3` and `make`; a plain `go build` produces a gdbuf that can only `--generate-only`.
 
 ## Codebase Structure
 
@@ -41,15 +42,16 @@ To successfully build `gdbuf` and compile GDExtensions for all supported platfor
 -   **`codegen.go`**: The main driver. It extracts data from the `FileDescriptorProto`s, populates the `templateData` struct, and executes templates. It handles recursive message flattening (for nested types) and doc comment extraction.
 -   **`godot.go`**: Contains the `resolveGodotType` logic. This is the "brain" that decides that `google.protobuf.Timestamp` becomes `int64_t`, or `repeated MyMsg` becomes `godot::Array`.
 -   **`templates/`**: Contains the `.tmpl` files.
-    -   `gdextension/`: CMake and config files.
+    -   `gdextension/`: the `.gdextension` manifest.
     -   `src/gen_once/`: Files generated once per run (e.g., `register_types.cpp`).
     -   `src/gen_per_proto_file/`: Files generated for every proto file (e.g., `resource.h` which defines the wrapper classes).
     -   `doc/`: Templates for generating Godot XML documentation.
 
 ### `internal/gdextension`
 -   **Responsibility**: Builds the final binary.
--   **`buildenv/`**: Contains the "build environment" (CMake lists, godot-cpp submodule, nanopb submodule) embedded into the Go binary.
--   **`gdextension.go`**: Manages the build process. It sets up a persistent build cache to avoid recompiling `godot-cpp` on every run. It copies generated sources into this cache and invokes `make`.
+-   **`buildenv/`**: Contains the "build environment" (godot-cpp submodule, its pre-generated bindings in `godot-cpp-gen/`, nanopb submodule, `build_profile.json`) embedded into the Go binary.
+-   **`gdextension.go`**: Manages the build process. It sets up a persistent build cache to avoid recompiling `godot-cpp` on every run, copies generated sources into it, and picks the target, flags and library name.
+-   **`compile.go`**: Per-platform toolchains (zig, emcc, NDK clang), the parallel compile with the cached godot-cpp objects, and the link.
 
 ## Key Concepts
 
@@ -84,7 +86,7 @@ Every Protobuf message is wrapped in a class inheriting from `godot::Resource`.
 ## Future Improvements
 -   **Nested Enums**: Currently top-level enums work best. Nested enums map to `int` but don't generate C++ enum definitions in the wrapper namespace.
 -   **Platform Support**: The Go code supports detecting platforms.
-    -   **Linux/Windows/macOS**: Supported via CMake toolchains.
-    -   **Android**: Fully supported. `gdbuf` automatically downloads and manages the Android NDK if `ANDROID_NDK_HOME` is not set.
-    -   **Web**: Fully supported. `gdbuf` automatically downloads and manages the Emscripten SDK (emsdk) if `EMSDK` is not set. Requires Python 3 to be installed on the host system.
+    -   **Linux/Windows/macOS**: Built with zig from any host.
+    -   **Android**: Built with the NDK's clang; the NDK is not downloaded automatically.
+    -   **Web**: Built with `emcc`; emsdk is not downloaded automatically and needs Python 3.
 -   **Map Values (Structs)**: Support for `map<Key, Message>` with Nanopb needs verification for complex nested types.

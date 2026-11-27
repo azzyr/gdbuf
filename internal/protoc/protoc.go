@@ -40,7 +40,7 @@ func NewProtoCompiler(logger *slog.Logger) (*ProtoCompiler, error) {
 	return &ProtoCompiler{logger: logger}, nil
 }
 
-// compile parses the protos in-process, protoc not needed. The proto directory comes first so --include adds paths instead of replacing it.
+// The proto directory comes first so --include adds paths instead of replacing it.
 func compile(protoFilesDirPath string, includeDirs []string, names []string) (linker.Files, error) {
 	compiler := protocompile.Compiler{
 		Resolver: protocompile.WithStandardImports(&protocompile.SourceResolver{
@@ -62,7 +62,7 @@ func (c *ProtoCompiler) BuildDescriptorSet(protoFilesDirPath string, includeDirs
 		return nil, fmt.Errorf("could not parse proto files: %w", err)
 	}
 
-	// Only the requested files, imports first, as protoc --descriptor_set_out orders them; class registration follows this order
+	// imports first, like protoc; classes register in this order
 	requested := map[string]bool{}
 	for _, name := range names {
 		requested[name] = true
@@ -116,7 +116,6 @@ func (c *ProtoCompiler) CompileNanopb(protoFilesDirPath string, includeDirs []st
 		return "", fmt.Errorf("could not marshal nanopb plugin request: %w", err)
 	}
 
-	// Run the plugin the way protoc would: request on stdin, response on stdout
 	pluginCmd := exec.Command(pluginPath)
 	pluginCmd.Stdin = bytes.NewReader(requestData)
 	var stdout, stderr bytes.Buffer
@@ -147,7 +146,6 @@ func (c *ProtoCompiler) CompileNanopb(protoFilesDirPath string, includeDirs []st
 	return tempProtocBuildDir, nil
 }
 
-// withDependencies lists every file and its transitive imports, imports first, as plugins expect.
 func withDependencies(files linker.Files) []*descriptorpb.FileDescriptorProto {
 	var out []*descriptorpb.FileDescriptorProto
 	seen := map[string]bool{}
@@ -169,7 +167,6 @@ func withDependencies(files linker.Files) []*descriptorpb.FileDescriptorProto {
 	return out
 }
 
-// getProtoFilesInDir returns proto paths relative to the proto directory, slash-separated, as import paths are.
 func getProtoFilesInDir(protoFilesDirPath string) ([]string, error) {
 	protoFilePaths := []string{}
 	err := fs.WalkDir(os.DirFS(protoFilesDirPath), ".", func(path string, d fs.DirEntry, err error) error {

@@ -12,8 +12,8 @@ Compile Protobuf schemas into a native C++ GDExtension
 ## Requirements
 
 - go 1.25+
-- python 3 with the `protobuf` package (`pip install protobuf`), for the nanopb generator
-- scons and a C++20 compiler (gcc, clang, msvc, or mingw for windows)
+- python 3 with the `protobuf` package (`pip install protobuf`), for the nanopb generator and building gdbuf itself
+- [zig](https://ziglang.org/download/) 0.17 on your PATH
 - emscripten for web builds (`emcc` on your PATH)
 
 ## Build
@@ -41,7 +41,6 @@ Or grab a binary from the releases.
 - `--generate-only` generate C++ but don't compile
 - `--cache` build cache dir, keeps godot-cpp objects between runs. `~/.cache/gdbuf` by default
 - `--debug` debug build
-- `--double` double precision build
 - `--threaded` threaded web build
 
 ## In Godot
