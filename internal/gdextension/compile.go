@@ -176,16 +176,56 @@ func compileAndLink(buildDir, srcDir, outPath string, tc toolchain, stdout, stde
 	objDir := filepath.Join(buildDir, "obj", hex.EncodeToString(sum[:8]))
 	userObjDir := filepath.Join(objDir, "user")
 
-	godotObjects, err := compileAll(godotSources, objDir, tc, flags, stdout, stderr, true)
+	godotObjects := make([]string, len(godotSources))
+	for i := range godotSources {
+		godotObjects[i] = filepath.Join(objDir, fmt.Sprintf("%d.o", i))
+	}
+	done := filepath.Join(objDir, "done")
+	if _, err := os.Stat(done); err != nil {
+		if err := compileAll(godotSources, godotObjects, tc, flags, stdout, stderr); err != nil {
+			return err
+		}
+		if err := os.WriteFile(done, nil, 0644); err != nil {
+			return err
+		}
+	}
+
+	// an object is named after its source and every generated header, so unchanged sources are not recompiled
+	headers := sha256.New()
+	err = filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || (filepath.Ext(path) != ".h" && filepath.Ext(path) != ".hpp") {
+			return err
+		}
+		data, err := os.ReadFile(path)
+		headers.Write([]byte(path))
+		headers.Write(data)
+		return err
+	})
 	if err != nil {
+		return fmt.Errorf("could not read generated headers: %w", err)
+	}
+	headerSum := headers.Sum(nil)
+	userObjects := make([]string, len(userSources))
+	var staleSources, staleObjects []string
+	for i, src := range userSources {
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(slices.Concat([]byte(src), data, headerSum))
+		userObjects[i] = filepath.Join(userObjDir, hex.EncodeToString(sum[:8])+".o")
+		if _, err := os.Stat(userObjects[i]); err != nil {
+			staleSources, staleObjects = append(staleSources, src), append(staleObjects, userObjects[i])
+		}
+	}
+	if err := compileAll(staleSources, staleObjects, tc, flags, stdout, stderr); err != nil {
 		return err
 	}
-	if err := os.RemoveAll(userObjDir); err != nil {
-		return err
-	}
-	userObjects, err := compileAll(userSources, userObjDir, tc, flags, stdout, stderr, false)
-	if err != nil {
-		return err
+	entries, _ := os.ReadDir(userObjDir)
+	for _, e := range entries {
+		if path := filepath.Join(userObjDir, e.Name()); !slices.Contains(userObjects, path) {
+			os.Remove(path)
+		}
 	}
 
 	// Windows command line limit
@@ -213,19 +253,14 @@ func compileAndLink(buildDir, srcDir, outPath string, tc toolchain, stdout, stde
 	return nil
 }
 
-func compileAll(sources []string, objDir string, tc toolchain, flags []string, stdout, stderr io.Writer, cache bool) ([]string, error) {
-	objects := make([]string, len(sources))
-	for i := range sources {
-		objects[i] = filepath.Join(objDir, fmt.Sprintf("%d.o", i))
+func compileAll(sources, objects []string, tc toolchain, flags []string, stdout, stderr io.Writer) error {
+	if len(sources) == 0 {
+		return nil
 	}
-	done := filepath.Join(objDir, "done")
-	if _, err := os.Stat(done); cache && err == nil {
-		return objects, nil
+	if err := os.MkdirAll(filepath.Dir(objects[0]), 0755); err != nil {
+		return err
 	}
-	if err := os.MkdirAll(objDir, 0755); err != nil {
-		return nil, err
-	}
-	fmt.Fprintf(stdout, "compiling %d sources in %s\n", len(sources), objDir)
+	fmt.Fprintf(stdout, "compiling %d sources in %s\n", len(sources), filepath.Dir(objects[0]))
 
 	var g errgroup.Group
 	g.SetLimit(runtime.NumCPU())
@@ -236,7 +271,9 @@ func compileAll(sources []string, objDir string, tc toolchain, flags []string, s
 			if strings.HasSuffix(src, ".c") {
 				args = slices.Concat(tc.cc, flags)
 			}
-			cmd := exec.Command(args[0], append(args[1:], "-c", src, "-o", objects[i])...)
+			// renamed when done, so an interrupted build never leaves a half-written object to reuse
+			tmp := objects[i] + ".tmp"
+			cmd := exec.Command(args[0], append(args[1:], "-c", src, "-o", tmp)...)
 			var out bytes.Buffer
 			cmd.Stdout, cmd.Stderr = &out, &out
 			err := cmd.Run()
@@ -246,18 +283,10 @@ func compileAll(sources []string, objDir string, tc toolchain, flags []string, s
 			if err != nil {
 				return fmt.Errorf("could not compile %s: %w", src, err)
 			}
-			return nil
+			return os.Rename(tmp, objects[i])
 		})
 	}
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-	if cache {
-		if err := os.WriteFile(done, nil, 0644); err != nil {
-			return nil, err
-		}
-	}
-	return objects, nil
+	return g.Wait()
 }
 
 func findSources(root string) (sources, dirs []string, err error) {
