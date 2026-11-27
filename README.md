@@ -12,8 +12,7 @@ Compile Protobuf schemas into a native C++ GDExtension
 ## Requirements
 
 - go 1.25+
-- python 3, only to build gdbuf itself
-- [zig](https://ziglang.org/download/) 0.17 on your PATH
+- scons and a C++20 compiler (gcc, clang, msvc, or mingw for windows)
 - emscripten for web builds (`emcc` on your PATH)
 
 ## Build

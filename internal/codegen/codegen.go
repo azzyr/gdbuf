@@ -276,6 +276,7 @@ func (cg *CodeGenerator) GenerateCode(fileDescriptorSet []*descriptorpb.FileDesc
 	}
 
 	oneTimeTemplates := map[string]string{
+		"SConstruct.tmpl":               "SConstruct",
 		"gde-protobuf.gdextension.tmpl": "out/gde-protobuf.gdextension",
 		"register_types.h.tmpl":         "src/register_types.h",
 		"register_types.cpp.tmpl":       "src/register_types.cpp",

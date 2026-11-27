@@ -14,7 +14,7 @@ var libraryExts = []string{".so", ".dll", ".dylib", ".wasm"}
 
 // Finalize copies the docs and writes the .gdextension listing every library found in outputDir/dist.
 func Finalize(genDir, outputDir string) error {
-	if err := copyFS(os.DirFS(filepath.Join(genDir, "doc_classes")), filepath.Join(outputDir, "doc_classes")); err != nil {
+	if err := copyFS(os.DirFS(filepath.Join(genDir, "doc_classes")), filepath.Join(outputDir, "doc_classes"), nil); err != nil {
 		return fmt.Errorf("could not copy docs: %w", err)
 	}
 

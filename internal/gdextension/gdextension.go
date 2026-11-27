@@ -2,12 +2,15 @@ package gdextension
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 )
@@ -18,14 +21,12 @@ var buildEnvFS embed.FS
 type GDExtensionBuilder struct {
 	logger   *slog.Logger
 	cacheDir string
-	name     string
 }
 
-func NewGDExtensionBuilder(logger *slog.Logger, cacheDir, name string) *GDExtensionBuilder {
+func NewGDExtensionBuilder(logger *slog.Logger, cacheDir string) *GDExtensionBuilder {
 	return &GDExtensionBuilder{
 		logger:   logger,
 		cacheDir: cacheDir,
-		name:     name,
 	}
 }
 
@@ -51,11 +52,6 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 		}
 	}
 
-	if generateOnly {
-		gde.logger.Info("skipping build step as --generate-only was provided")
-		return nil
-	}
-
 	if err := os.MkdirAll(buildDir, 0755); err != nil {
 		return fmt.Errorf("could not make build directory: %w", err)
 	}
@@ -67,43 +63,109 @@ func (gde *GDExtensionBuilder) Build(generatedCppSourceDir, outputDir, platform 
 		return fmt.Errorf("could not get build environment fs: %w", err)
 	}
 
-	if err = copyFS(buildEnv, buildDir); err != nil {
+	if err = copyFS(buildEnv, buildDir, nil); err != nil {
 		return fmt.Errorf("could not copy build environment to build directory: %w", err)
 	}
 
-	// Parse platform and optional arch (e.g. "macos-arm64")
-	platformName, arch, _ := strings.Cut(platform, "-")
-	if arch == "" {
-		arch = map[string]string{"linux": "x86_64", "windows": "x86_64", "web": "wasm32", "android": "arm64"}[platformName]
+	// Clean up the src directory in the build directory to avoid stale files
+	srcDir := filepath.Join(buildDir, "src")
+	if err := os.RemoveAll(srcDir); err != nil {
+		return fmt.Errorf("could not remove src directory in build directory: %w", err)
 	}
-	threads := platformName != "web" || isThreaded
 
-	tc, err := newToolchain(platformName, arch, threads, isDebug)
+	copyExcludes, err := computeCopyExcludes(generatedCppSourceDir, buildDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not compute copy exclusions: %w", err)
+	}
+	if err = copyFS(os.DirFS(generatedCppSourceDir), buildDir, nil, copyExcludes...); err != nil {
+		return fmt.Errorf("could not copy custom build files to build directory: %w", err)
 	}
 
-	target := "template_release"
+	if generateOnly {
+		gde.logger.Info("skipping build step as --generate-only was provided")
+		return nil
+	}
+
+	// Parse platform and optional arch (e.g. "macos-arm64")
+	sconsPlatform := platform
+	sconsArch := ""
+	if idx := strings.Index(platform, "-"); idx != -1 {
+		sconsPlatform = platform[:idx]
+		sconsArch = platform[idx+1:]
+	}
+
+	// all files are in place, try to build
+	buildCmd := exec.Command("scons")
+
+	buildCmd.Env = os.Environ()
+
+	// Add arguments
+	buildCmd.Args = append(buildCmd.Args, fmt.Sprintf("-j %d", runtime.NumCPU()))
+	buildCmd.Args = append(buildCmd.Args, fmt.Sprintf("platform=%s", sconsPlatform))
+	if sconsArch != "" {
+		buildCmd.Args = append(buildCmd.Args, fmt.Sprintf("arch=%s", sconsArch))
+	}
+
 	if isDebug {
-		target = "template_debug"
+		buildCmd.Args = append(buildCmd.Args, "target=template_debug")
+	} else {
+		buildCmd.Args = append(buildCmd.Args, "target=template_release")
 	}
-	suffix := "." + platformName + "." + target + "." + arch
-	if !threads {
-		suffix += ".nothreads"
-	}
-	outPath := filepath.Join(outputDir, "dist", "lib"+gde.name+suffix+tc.ext)
 
-	if err := compileAndLink(buildDir, filepath.Join(generatedCppSourceDir, "src"), outPath, tc, stdout, stderr); err != nil {
+	if sconsPlatform == "web" {
+		if !isThreaded {
+			buildCmd.Args = append(buildCmd.Args, "threads=no")
+		} else {
+			buildCmd.Args = append(buildCmd.Args, "threads=yes")
+		}
+	}
+
+	buildCmd.Dir = buildDir
+	buildCmd.Stdout = stdout
+	buildCmd.Stderr = stderr
+
+	// bin persists in the cache; clear it so only this platform's library gets copied
+	binDir := filepath.Join(buildDir, "bin")
+	if err := os.RemoveAll(binDir); err != nil {
+		return fmt.Errorf("could not clear bin directory: %w", err)
+	}
+
+	err = buildCmd.Run()
+	if err != nil {
 		return fmt.Errorf("build error: %w", err)
 	}
-	gde.logger.Info("build successful", "library", outPath)
+	gde.logger.Info("build successful")
+
+	if err = copyFS(os.DirFS(binDir), filepath.Join(outputDir, "dist"), stdout); err != nil {
+		return fmt.Errorf("could not copy build output to output directory: %w", err)
+	}
 	return nil
 }
 
-func copyFS(src fs.FS, dst string) error {
+func copyFS(src fs.FS, dst string, logWriter io.Writer, excludePrefixes ...string) error {
+	var normalizedPrefixes []string
+	for _, prefix := range excludePrefixes {
+		normalized := normalizeFSPath(prefix)
+		if normalized == "." || normalized == "" {
+			continue
+		}
+		normalizedPrefixes = append(normalizedPrefixes, normalized)
+	}
+
+	fileCount := 0
 	return fs.WalkDir(src, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+
+		normalizedPath := normalizeFSPath(path)
+		for _, prefix := range normalizedPrefixes {
+			if normalizedPath == prefix || strings.HasPrefix(normalizedPath, prefix+"/") {
+				if d.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
 		}
 
 		dstPath := filepath.Join(dst, path)
@@ -133,6 +195,14 @@ func copyFS(src fs.FS, dst string) error {
 			}
 		}
 
+		// Throttle log output for file copies to prevent flooding the TUI
+		if logWriter != nil {
+			fileCount++
+			if fileCount%10 == 0 {
+				fmt.Fprintln(logWriter, "Copying "+path)
+			}
+		}
+
 		dstFile, err := os.Create(dstPath)
 		if err != nil {
 			return err
@@ -142,4 +212,42 @@ func copyFS(src fs.FS, dst string) error {
 		_, err = dstFile.Write(srcData)
 		return err
 	})
+}
+
+func computeCopyExcludes(srcRoot, dst string) ([]string, error) {
+	srcAbs, err := filepath.Abs(srcRoot)
+	if err != nil {
+		return nil, err
+	}
+
+	dstAbs, err := filepath.Abs(dst)
+	if err != nil {
+		return nil, err
+	}
+
+	rel, err := filepath.Rel(srcAbs, dstAbs)
+	if err != nil {
+		return nil, err
+	}
+
+	if rel == "." || rel == "" {
+		return nil, errors.New("source and destination directories must be different")
+	}
+
+	if strings.HasPrefix(rel, ".."+string(os.PathSeparator)) || rel == ".." {
+		return nil, nil
+	}
+
+	return []string{filepath.ToSlash(rel)}, nil
+}
+
+func normalizeFSPath(path string) string {
+	path = filepath.ToSlash(path)
+	path = strings.TrimPrefix(path, "./")
+	path = strings.TrimPrefix(path, "/")
+	path = strings.TrimSuffix(path, "/")
+	if path == "" {
+		return "."
+	}
+	return path
 }

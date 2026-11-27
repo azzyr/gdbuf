@@ -8,22 +8,18 @@ The program operates in a linear pipeline:
 1.  **Input Parsing**: Accepts a directory of `.proto` files and optional include directories for import resolution.
 2.  **Proto Compilation**: Parses the `.proto` files in-process with `github.com/bufbuild/protocompile` (no `protoc` needed) into descriptors.
 3.  **Code Generation**: Parses the descriptor set to understand the message structure, then executes Go `text/template` templates to generate Godot-specific C++ wrappers.
-4.  **GDExtension Compilation**: Compiles godot-cpp, the generated wrappers and the embedded **Nanopb** runtime into a shared library by calling the compiler directly (`compile.go`), no build system. godot-cpp is compiled once per toolchain, flag set and gdbuf version into the build cache (`~/.cache/gdbuf` or local `.gdbuf_cache`); the generated sources are recompiled every run.
+4.  **GDExtension Compilation**: Runs scons on the generated `SConstruct` to compile godot-cpp, the generated wrappers and the embedded **Nanopb** runtime into a shared library. It uses a persistent build cache (in `~/.cache/gdbuf` or local `.gdbuf_cache`) so godot-cpp is not rebuilt every run.
 
 ## Build Dependencies
 
 | Platform | User-Provided Dependencies | Embedded in `gdbuf` |
 | :--- | :--- | :--- |
-| **All Platforms** | `go` (1.25+) | `godot-cpp` and its pre-generated bindings, the `nanopb` runtime |
-| **Linux / Windows / macOS** | `zig` 0.17 (or `ZIG` set to its path), from any host | - |
-| **Web (WASM)** | `emcc` from emsdk; Godot loads web extensions as emscripten side modules | - |
-| **Android** | NDK 28.1 via `ANDROID_NDK_ROOT`, or `ANDROID_HOME` with `ndk/28.1.13356709` | - |
-
-Compiler flags mirror godot-cpp's `tools/<platform>.py` and `tools/common_compiler_flags.py`; check them when updating the submodule.
-
-### godot-cpp bindings
-
-godot-cpp normally generates its bindings with Python at build time. `make build` and `make build-all` run `tools/gen_bindings.py` first, which writes them to `internal/gdextension/buildenv/godot-cpp-gen/64` (64-bit targets) and `32` (wasm32); they are gitignored and embedded in the binary, so gdbuf users need no Python. Building gdbuf therefore needs `python3` and `make`; a plain `go build` produces a gdbuf that can only `--generate-only`.
+| **All Platforms** | `go` (1.25+), `scons` | `godot-cpp`, the `nanopb` runtime |
+| **Linux** | `gcc` or `clang++` | - |
+| **Windows (Cross)** | MinGW-w64 (`x86_64-w64-mingw32-g++`) | - |
+| **macOS** | a Mac with Xcode command line tools, or OSXCross | - |
+| **Web (WASM)** | `emcc` from emsdk | - |
+| **Android** | NDK 28.1 via `ANDROID_HOME` | - |
 
 ## Codebase Structure
 
@@ -48,9 +44,8 @@ godot-cpp normally generates its bindings with Python at build time. `make build
 
 ### `internal/gdextension`
 -   **Responsibility**: Builds the final binary.
--   **`buildenv/`**: Contains the "build environment" (godot-cpp submodule, its pre-generated bindings in `godot-cpp-gen/`, nanopb submodule, `build_profile.json`) embedded into the Go binary.
--   **`gdextension.go`**: Manages the build process. It sets up a persistent build cache to avoid recompiling `godot-cpp` on every run, copies generated sources into it, and picks the target, flags and library name.
--   **`compile.go`**: Per-platform toolchains (zig, emcc, NDK clang), the parallel compile with the cached godot-cpp objects, and the link.
+-   **`buildenv/`**: Contains the "build environment" (godot-cpp submodule, nanopb submodule, `build_profile.json`) embedded into the Go binary.
+-   **`gdextension.go`**: Manages the build process. It sets up a persistent build cache to avoid recompiling `godot-cpp` on every run, copies generated sources into it and runs scons.
 
 ## Key Concepts
 
@@ -74,7 +69,7 @@ Every Protobuf message is wrapped in a class inheriting from `godot::Resource`.
 ## Future Improvements
 -   **Nested Enums**: Currently top-level enums work best. Nested enums map to `int` but don't generate C++ enum definitions in the wrapper namespace.
 -   **Platform Support**: The Go code supports detecting platforms.
-    -   **Linux/Windows/macOS**: Built with zig from any host.
-    -   **Android**: Built with the NDK's clang; the NDK is not downloaded automatically.
-    -   **Web**: Built with `emcc`; emsdk is not downloaded automatically and needs Python 3.
+    -   **Linux/Windows/macOS**: Built through godot-cpp's scons platform tools.
+    -   **Android**: Needs the NDK; it is not downloaded automatically.
+    -   **Web**: Needs `emcc`; emsdk is not downloaded automatically.
 -   **Extension names**: `--name` equal to a proto file's name (`--name foo` with `foo.proto`) does not compile; the global class and the file's namespace collide.

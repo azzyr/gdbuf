@@ -88,7 +88,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	gdExtensionBuilder := gdextension.NewGDExtensionBuilder(logger, *cacheDirPtr, *extensionNamePtr)
+	gdExtensionBuilder := gdextension.NewGDExtensionBuilder(logger, *cacheDirPtr)
 
 	protoc, err := protoc.NewProtoCompiler(logger.WithGroup("protoc"))
 	if err != nil {
