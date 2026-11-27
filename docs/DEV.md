@@ -6,7 +6,7 @@
 
 The program operates in a linear pipeline:
 1.  **Input Parsing**: Accepts a directory of `.proto` files and optional include directories for import resolution.
-2.  **Protoc Compilation**: Uses `protoc` to generate standard C++ headers/sources and a binary descriptor set (`.desc.binpb`).
+2.  **Proto Compilation**: Parses the `.proto` files in-process with `github.com/bufbuild/protocompile` (no `protoc` needed) into descriptors, then runs the Nanopb plugin on them to generate C headers/sources.
 3.  **Code Generation**: Parses the descriptor set to understand the message structure, then executes Go `text/template` templates to generate Godot-specific C++ wrappers.
 4.  **GDExtension Compilation**: Orchestrates a CMake build to compile the generated wrappers + the embedded **Nanopb** library into a shared library. It uses a persistent build cache (in `~/.cache/gdbuf` or local `.gdbuf_cache`) to enable incremental builds.
 
@@ -16,7 +16,7 @@ To successfully build `gdbuf` and compile GDExtensions for all supported platfor
 
 | Platform | User-Provided Dependencies | Managed by `gdbuf` (Automatic) |
 | :--- | :--- | :--- |
-| **All Platforms** | `go` (1.21+), `cmake` (3.16+), `protoc`, `make` or `ninja` | `godot-cpp`, `nanopb` |
+| **All Platforms** | `go` (1.21+), `cmake` (3.16+), `make` or `ninja` | `godot-cpp`, `nanopb` |
 | **Linux** | `gcc` or `clang++` | - |
 | **Windows (Cross)** | MinGW-w64 (`x86_64-w64-mingw32-g++`) | - |
 | **Web (WASM)** | `python3` | `emsdk` (Emscripten SDK)* |
@@ -30,10 +30,10 @@ To successfully build `gdbuf` and compile GDExtensions for all supported platfor
 -   **`main.go`**: The entry point. It parses command-line flags, sets up logging, and orchestrates the three main internal packages (`protoc`, `codegen`, `gdextension`).
 
 ### `internal/protoc`
--   **Responsibility**: Wraps the `protoc` command-line tool.
+-   **Responsibility**: Parses `.proto` files in-process with `protocompile`; `protoc` is not used.
 -   **Key Functions**:
-    -   `BuildDescriptorSet`: Runs `protoc --descriptor_set_out` to get a machine-readable definition of the proto files.
-    -   `CompileNanopb`: Runs `protoc` with the `protoc-gen-nanopb` plugin to generate Nanopb C headers/sources (`.pb.h`, `.pb.c`).
+    -   `BuildDescriptorSet`: Returns the `FileDescriptorProto`s of the proto files, imports first, as `protoc --descriptor_set_out` ordered them.
+    -   `CompileNanopb`: Builds a `CodeGeneratorRequest` and pipes it to the `protoc-gen-nanopb` plugin the way `protoc` would, then writes the Nanopb C headers/sources (`.pb.h`, `.pb.c`) from its response.
 -   **Notes**: Enforces strict include paths (relative to current directory) to avoid aliasing issues.
 
 ### `internal/codegen`

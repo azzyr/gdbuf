@@ -12,7 +12,7 @@ Compile Protobuf schemas into a native C++ GDExtension
 ## Requirements
 
 - go 1.25+
-- `protoc` on your PATH
+- python 3 with the `protobuf` package (`pip install protobuf`), for the nanopb generator
 - scons and a C++20 compiler (gcc, clang, msvc, or mingw for windows)
 - emscripten for web builds (`emcc` on your PATH)
 
