@@ -7,6 +7,8 @@ import sys
 root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "internal", "gdextension", "buildenv")
 godot_cpp = os.path.join(root, "godot-cpp")
 sys.path.insert(0, godot_cpp)
+# a __pycache__ in godot-cpp would be embedded too, and its timestamps change the godot-cpp cache key every release
+sys.dont_write_bytecode = True
 
 from binding_generator import _generate_bindings  # noqa: E402
 from build_profile import generate_trimmed_api  # noqa: E402
